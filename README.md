@@ -1,2 +1,2 @@
-# CENTER_TBI_TIL
+# CENTER-TBI_TIL
 TIL validation on CENTER-TBI dataset
