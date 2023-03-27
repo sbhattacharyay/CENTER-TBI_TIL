@@ -37,74 +37,7 @@ warnings.filterwarnings(action="ignore")
 # Custom methods
 from functions.analysis import spearman_rho
 
-### II. Load and prepare TIL scores of full dataset and designate sub-study assignment
-## Load formatted TIL score dataframe
-# Read CSV
-formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
-
-# Convert dates from string to date format
-formatted_TIL_scores.TILDate = pd.to_datetime(formatted_TIL_scores.TILDate,format = '%Y-%m-%d')
-
-## Add columns designating sub-study assignment
-# Label each row as part of Total analysis group
-formatted_TIL_scores['Total'] = True
-
-# Label rows of low-resolution ICP subgroup
-mod_daily_hourly_info = pd.read_csv('../formatted_data/formatted_daily_hourly_values.csv')
-formatted_TIL_scores['ICP_lo_res'] = False
-formatted_TIL_scores.ICP_lo_res[formatted_TIL_scores.GUPI.isin(mod_daily_hourly_info.GUPI)] = True
-
-# Label rows of low-resolution ICP subgroup
-hi_res_daily_TIL_info = pd.read_csv('../CENTER-TBI/HighResolution/high_res_TIL_timestamps.csv')
-formatted_TIL_scores['ICP_hi_res'] = False
-formatted_TIL_scores.ICP_hi_res[formatted_TIL_scores.GUPI.isin(hi_res_daily_TIL_info.GUPI)] = True
-
-## Convert each 'None' timepoint to a number
-# Replace 'None' timepoints with NaN
-formatted_TIL_scores.TILTimepoint[formatted_TIL_scores.TILTimepoint=='None'] = np.nan
-
-# Determine GUPIs with 'None' timepoints
-none_GUPIs = formatted_TIL_scores[formatted_TIL_scores.TILTimepoint.isna()].GUPI.unique()
-
-# Iterate through 'None' GUPIs and impute missing timepoint values
-for curr_GUPI in none_GUPIs:
-    curr_GUPI_TIL_scores = formatted_TIL_scores[formatted_TIL_scores.GUPI==curr_GUPI].reset_index(drop=True)
-    curr_date_diff = int((curr_GUPI_TIL_scores.TILDate.dt.day - curr_GUPI_TIL_scores.TILTimepoint.astype(float)).mode()[0])
-    fixed_timepoints_vector = (curr_GUPI_TIL_scores.TILDate.dt.day - curr_date_diff).astype(str)
-    fixed_timepoints_vector.index=formatted_TIL_scores[formatted_TIL_scores.GUPI==curr_GUPI].index
-    formatted_TIL_scores.TILTimepoint[formatted_TIL_scores.GUPI==curr_GUPI] = fixed_timepoints_vector    
-
-# Convert TILTimepoint variable from string to integer
-formatted_TIL_scores.TILTimepoint = formatted_TIL_scores.TILTimepoint.astype(int)
-
-## Fix instances with more than 1 daily TIL score per patient's day in ICU
-# Count number of TIL scores available per patient-Timepoint combination
-patient_TIL_counts = formatted_TIL_scores.groupby(['GUPI','TILTimepoint'],as_index=False).TotalTIL.count()
-
-# Isolate patients with instances of more than 1 daily TIL per day
-more_than_one_GUPIs = patient_TIL_counts[patient_TIL_counts.TotalTIL>1].GUPI.unique()
-
-# Filter dataframe of more-than-one-instance patients to visually examine
-more_than_one_TIL_scores = formatted_TIL_scores[formatted_TIL_scores.GUPI.isin(more_than_one_GUPIs)].reset_index(drop=True)
-
-# Select the rows which correspond to the greatest TIL score per ICU stay day per patient
-keep_idx = formatted_TIL_scores.groupby(['GUPI','TILTimepoint'])['TotalTIL'].transform(max) == formatted_TIL_scores['TotalTIL']
-
-# Filter to keep selected rows only
-formatted_TIL_scores = formatted_TIL_scores[keep_idx].reset_index(drop=True)
-
 ### III. Calculate population-level summary characteristics
-## TILmax and TILmean
-# Calculate TILmax and TILmean per patient
-summarised_TIL_per_patient = formatted_TIL_scores.groupby(['GUPI','Total','ICP_lo_res','ICP_hi_res'],as_index=False).TotalTIL.aggregate({'TILmax':'max','TILmean':'mean'}).reset_index(drop=True)
-
-# Melt into long form and filter in-group patients
-summarised_TIL_per_patient = summarised_TIL_per_patient.melt(id_vars=['GUPI','TILmax','TILmean'],var_name='Group')
-summarised_TIL_per_patient = summarised_TIL_per_patient[summarised_TIL_per_patient['value']==True].drop(columns='value').reset_index(drop=True)
-
-# Melt metrics into long form as well
-summarised_TIL_per_patient = summarised_TIL_per_patient.melt(id_vars=['GUPI','Group'],var_name='TILmetric')
-
 # Calculate group-level summary TIL values and round to one decimal point
 summarised_TIL_population = summarised_TIL_per_patient.groupby(['Group','TILmetric'],as_index=False)['value'].aggregate({'q1':lambda x: np.quantile(x,.25),'median':lambda x: np.median(x),'q3':lambda x: np.quantile(x,.75),'count':lambda x: len(x)}).reset_index(drop=True)
 summarised_TIL_population[['q1','median','q3']] = summarised_TIL_population[['q1','median','q3']].round(1)
@@ -116,6 +49,9 @@ summarised_TIL_population['FormattedIQR'] = summarised_TIL_population['median'].
 # Melt into long form and filter in-group patients
 long_formatted_TIL_scores = formatted_TIL_scores[['GUPI','TILTimepoint','TotalTIL','Total','ICP_lo_res','ICP_hi_res']].melt(id_vars=['GUPI','TILTimepoint','TotalTIL'],var_name='Group')
 long_formatted_TIL_scores = long_formatted_TIL_scores[long_formatted_TIL_scores['value']==True].drop(columns='value').reset_index(drop=True)
+
+# Save daily TIL score dataframe
+long_formatted_TIL_scores.to_csv('../formatted_data/formatted_TIL24_scores.csv',index=False)
 
 # Calculate TIL scores for each ICU stay day
 TIL_per_day_population = long_formatted_TIL_scores.groupby(['Group','TILTimepoint'],as_index=False).TotalTIL.aggregate({'q1':lambda x: np.quantile(x,.25),'median':lambda x: np.median(x),'q3':lambda x: np.quantile(x,.75),'count':lambda x: len(x)}).reset_index(drop=True)
@@ -194,11 +130,71 @@ mod_daily_hourly_info.TimeStamp = pd.to_datetime(mod_daily_hourly_info.TimeStamp
 formatted_TIL_scores.TimeStamp = pd.to_datetime(formatted_TIL_scores.TimeStamp,format = '%Y-%m-%d %H:%M:%S')
 
 # Add a column to designate day component in both low-resolution dataframe and formatted TIL score dataframe
-mod_daily_hourly_info['DayComponent'] = mod_daily_hourly_info.TimeStamp.dt.day
-formatted_TIL_scores['DayComponent'] = formatted_TIL_scores.TimeStamp.dt.day
+mod_daily_hourly_info['DateComponent'] = mod_daily_hourly_info.TimeStamp.dt.date
+formatted_TIL_scores['DateComponent'] = formatted_TIL_scores.TimeStamp.dt.date
 
-# Merge TIL scores onto corresponding low-resolution ICP/CPP scores based on 'DayComponent'
-formatted_lo_res_values = mod_daily_hourly_info.merge(formatted_TIL_scores[['GUPI','DayComponent','TILTimepoint','TotalTIL']],how='left',on=['GUPI','DayComponent'])
+# Merge TIL scores onto corresponding low-resolution ICP/CPP scores based on 'DateComponent'
+formatted_lo_res_values = mod_daily_hourly_info.merge(formatted_TIL_scores[['GUPI','DateComponent','TILTimepoint','TotalTIL']],how='left',on=['GUPI','DateComponent'])
 
 # Filter out rows without TIL scores on the day and select relevant columns
-formatted_lo_res_values = formatted_lo_res_values[~formatted_lo_res_values.TotalTIL.isna()][['GUPI','','']]
+formatted_lo_res_values = formatted_lo_res_values[~formatted_lo_res_values.TotalTIL.isna()][['GUPI','TimeStamp','DateComponent','HVICP','HVCPP','TILTimepoint','TotalTIL']]
+
+# Melt out ICP and CPP values to long-form
+formatted_lo_res_values = formatted_lo_res_values.melt(id_vars=['GUPI','TimeStamp','DateComponent','TILTimepoint','TotalTIL'])
+
+# Remove missing CPP values
+formatted_lo_res_values = formatted_lo_res_values[~formatted_lo_res_values.value.isna()].reset_index(drop=True)
+
+# Calculate daily ICP and CPP means
+formatted_lo_res_values = formatted_lo_res_values.groupby(['GUPI','DateComponent','TILTimepoint','TotalTIL','variable'],as_index=False)['value'].aggregate({'value':'mean','count':'count'})
+
+# Rename variable names to ICP24 and CPP24
+formatted_lo_res_values['variable'] = formatted_lo_res_values.variable.str.replace('HV','') + '24'
+
+# Save formatted low-resolution ICP and CPP information
+formatted_lo_res_values.to_csv('../formatted_data/formatted_low_resolution_neuromonitoring.csv',index=False)
+
+## Calculate ICP/CPPmax and ICP/CPPmean
+# Load low-resolution ICP and CPP information
+mod_daily_hourly_info = pd.read_csv('../formatted_data/formatted_daily_hourly_values.csv')
+
+# Convert timestamps from string to date format in both low-resolution dataframe
+mod_daily_hourly_info.TimeStamp = pd.to_datetime(mod_daily_hourly_info.TimeStamp,format = '%Y-%m-%d %H:%M:%S')
+
+# Add a column to designate day component in both low-resolution dataframe
+mod_daily_hourly_info['DateComponent'] = mod_daily_hourly_info.TimeStamp.dt.date
+
+# Melt out ICP and CPP values to long-form
+all_daily_lo_res_values = mod_daily_hourly_info[['GUPI','TimeStamp','DateComponent','HVICP','HVCPP']].melt(id_vars=['GUPI','TimeStamp','DateComponent'])
+
+# Remove missing CPP values
+all_daily_lo_res_values = all_daily_lo_res_values[~all_daily_lo_res_values.value.isna()].reset_index(drop=True)
+
+# Calculate daily ICP and CPP means
+all_daily_lo_res_values = all_daily_lo_res_values.groupby(['GUPI','DateComponent','variable'],as_index=False)['value'].aggregate({'value':'mean','count':'count'})
+
+# Rename variable names to ICP24 and CPP24
+all_daily_lo_res_values['variable'] = all_daily_lo_res_values.variable.str.replace('HV','') + '24'
+
+# Calculate ICP/CPPmean
+patient_lo_res_neuro_means = all_daily_lo_res_values.groupby(['GUPI','variable'],as_index=False)['value'].mean()
+patient_lo_res_neuro_means['variable'] = patient_lo_res_neuro_means.variable.str.replace('24','mean')
+
+# Calculate ICP/CPPmax
+patient_lo_res_neuro_maxes = all_daily_lo_res_values.groupby(['GUPI','variable'],as_index=False)['value'].max()
+patient_lo_res_neuro_maxes['variable'] = patient_lo_res_neuro_maxes.variable.str.replace('24','max')
+
+# Isolate TILmean and TILmax
+isolated_TIL_mean_max = summarised_TIL_per_patient[['GUPI','TILmetric','value']].drop_duplicates(ignore_index=True)
+isolated_TIL_mean = isolated_TIL_mean_max[isolated_TIL_mean_max.TILmetric=='TILmean'].reset_index(drop=True).drop(columns='TILmetric').rename(columns={'value':'TILmean'})
+isolated_TIL_max = isolated_TIL_mean_max[isolated_TIL_mean_max.TILmetric=='TILmax'].reset_index(drop=True).drop(columns='TILmetric').rename(columns={'value':'TILmax'})
+
+# Merge TILmean to ICP/CPPmean and merge TILmax to ICP/CPPmax
+patient_lo_res_neuro_means = patient_lo_res_neuro_means.merge(isolated_TIL_mean,how='left')
+patient_lo_res_neuro_maxes = patient_lo_res_neuro_maxes.merge(isolated_TIL_max,how='left')
+
+# Calculate correlation between TILmetrics and corresponding ICP/CPP summary
+lo_res_neuro_corr_with_TIL = pd.concat([patient_lo_res_neuro_means.groupby(['variable'],as_index=False).apply(spearman_rho,'TILmean'),patient_lo_res_neuro_maxes.groupby(['variable'],as_index=False).apply(spearman_rho,'TILmax')],ignore_index=True)
+
+# Round correlation and p-values
+lo_res_neuro_corr_with_TIL[['rho','p_val']] = lo_res_neuro_corr_with_TIL[['rho','p_val']].round(3)

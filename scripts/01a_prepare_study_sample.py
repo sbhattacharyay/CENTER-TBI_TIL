@@ -8,8 +8,10 @@
 # I. Initialisation
 # II. Load and prepare TIL information
 # III. Load and prepare low-resolution ICP and CPP information
-# IV. Load and prepare six-month functional outcome scores
-# V. Prepare dataframe of high-resolution sub-study patients
+# IV. Load and prepare high-resolution ICP and CPP information
+# V. Load and prepare demographic information and baseline characteristics
+# VI. Load and prepare information from prior study data
+# VII. Load and prepare serum sodium values from CENTER-TBI
 
 ### I. Initialisation
 # Fundamental libraries
@@ -554,6 +556,47 @@ for curr_GUPI in tqdm(gupis_with_DecomCranectomy, 'Fixing TotalTIL and decompres
     mod_daily_TIL_info.TotalTIL[(mod_daily_TIL_info.GUPI==curr_GUPI)] = fix_TotalTIL    
     mod_daily_TIL_info.TILICPSurgeryDecomCranectomy[(mod_daily_TIL_info.GUPI==curr_GUPI)] = fix_TILICPSurgeryDecomCranectomy
 
+## Fix rows with 'None' timepoints
+# Replace 'None' timepoints with NaN
+mod_daily_TIL_info.TILTimepoint[mod_daily_TIL_info.TILTimepoint=='None'] = np.nan
+
+# Determine GUPIs with 'None' timepoints
+none_GUPIs = mod_daily_TIL_info[mod_daily_TIL_info.TILTimepoint.isna()].GUPI.unique()
+
+# Iterate through 'None' GUPIs and impute missing timepoint values
+for curr_GUPI in none_GUPIs:
+    curr_GUPI_TIL_scores = mod_daily_TIL_info[mod_daily_TIL_info.GUPI==curr_GUPI].reset_index(drop=True)
+    non_missing_timepoint_mask = ~curr_GUPI_TIL_scores.TILTimepoint.isna()
+    if non_missing_timepoint_mask.sum() != 1:
+        curr_default_date = (curr_GUPI_TIL_scores.TimeStamp.dt.date[non_missing_timepoint_mask] - pd.to_timedelta(curr_GUPI_TIL_scores.TILTimepoint.astype(float)[non_missing_timepoint_mask],unit='d')).mode()[0]
+    else:
+        curr_default_date = (curr_GUPI_TIL_scores.TimeStamp.dt.date[non_missing_timepoint_mask] - timedelta(days=curr_GUPI_TIL_scores.TILTimepoint.astype(float)[non_missing_timepoint_mask].values[0])).mode()[0]
+    fixed_timepoints_vector = ((curr_GUPI_TIL_scores.TimeStamp.dt.date - curr_default_date)/np.timedelta64(1,'D')).astype(int).astype(str)
+    fixed_timepoints_vector.index=mod_daily_TIL_info[mod_daily_TIL_info.GUPI==curr_GUPI].index
+    mod_daily_TIL_info.TILTimepoint[mod_daily_TIL_info.GUPI==curr_GUPI] = fixed_timepoints_vector
+
+# Convert TILTimepoint variable from string to integer
+mod_daily_TIL_info.TILTimepoint = mod_daily_TIL_info.TILTimepoint.astype(int)
+
+## Fix instances in which a patient has more than one TIL score per day
+# Count number of TIL scores available per patient-Timepoint combination
+patient_TIL_counts = mod_daily_TIL_info.groupby(['GUPI','TILTimepoint'],as_index=False).TotalTIL.count()
+
+# Isolate patients with instances of more than 1 daily TIL per day
+more_than_one_GUPIs = patient_TIL_counts[patient_TIL_counts.TotalTIL>1].GUPI.unique()
+
+# Filter dataframe of more-than-one-instance patients to visually examine
+more_than_one_TIL_scores = mod_daily_TIL_info[mod_daily_TIL_info.GUPI.isin(more_than_one_GUPIs)].reset_index(drop=True)
+
+# Select the rows which correspond to the greatest TIL score per ICU stay day per patient
+keep_idx = mod_daily_TIL_info.groupby(['GUPI','TILTimepoint'])['TotalTIL'].transform(max) == mod_daily_TIL_info['TotalTIL']
+
+# Filter to keep selected rows only
+mod_daily_TIL_info = mod_daily_TIL_info[keep_idx].reset_index(drop=True)
+
+## Add a DateComponent column to dataframe
+mod_daily_TIL_info['DateComponent'] = mod_daily_TIL_info.TimeStamp.dt.date
+
 ## Save modified Daily TIL dataframes in new directory
 os.makedirs('../formatted_data/',exist_ok=True)
 mod_daily_TIL_info.to_csv('../formatted_data/formatted_TIL_scores.csv',index=False)
@@ -562,6 +605,13 @@ mod_daily_TIL_info.to_csv('../formatted_data/formatted_TIL_scores.csv',index=Fal
 ## Fix timestamp inaccuracies in HourlyValues dataframe based on HourlyValueTimePoint
 # Load modified Daily TIL dataframes
 mod_daily_TIL_info = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+
+# Convert dates from string to date format
+mod_daily_TIL_info.TimeStamp = pd.to_datetime(mod_daily_TIL_info.TimeStamp,format = '%Y-%m-%d %H:%M:%S')
+mod_daily_TIL_info.TILDate = pd.to_datetime(mod_daily_TIL_info.TILDate,format = '%Y-%m-%d')
+mod_daily_TIL_info.TILDate = mod_daily_TIL_info.TILDate.dt.date
+mod_daily_TIL_info.DateComponent = pd.to_datetime(mod_daily_TIL_info.DateComponent,format = '%Y-%m-%d')
+mod_daily_TIL_info.DateComponent = mod_daily_TIL_info.DateComponent.dt.date
 
 # Load HourlyValues dataframe
 daily_hourly_info = pd.read_csv('../CENTER-TBI/DailyHourlyValues/data.csv',na_values = ["NA","NaN"," ", ""])
@@ -621,34 +671,192 @@ first_cols = ['GUPI','PatientType','TimeStamp','HVICP','ICUAdmTimeStamp','ICUDis
 other_cols = mod_daily_hourly_info.columns.difference(first_cols).to_list()
 mod_daily_hourly_info = mod_daily_hourly_info[first_cols+other_cols]
 
-# Save modified Daily hourly value dataframes in new directory
-os.makedirs('../formatted_data/',exist_ok=True)
-mod_daily_hourly_info.to_csv('../formatted_data/formatted_daily_hourly_values.csv',index=False)
+## Merge TIL scores onto corresponding low-resolution ICP/CPP scores based on 'DateComponent'
+# Add a column to designate day component in low-resolution dataframe
+mod_daily_hourly_info['DateComponent'] = mod_daily_hourly_info.TimeStamp.dt.date
 
-### IV. Load and prepare six-month functional outcome scores
-## Load function outcome scores of patients in TIL dataframe
-# Load modified Daily TIL dataframes
-mod_daily_TIL_info = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+# Merge
+lo_res_info = mod_daily_hourly_info.merge(mod_daily_TIL_info[['GUPI','DateComponent','TILTimepoint','TotalTIL']],how='left',on=['GUPI','DateComponent'])
+
+# Filter out rows without TIL scores on the day and select relevant columns
+lo_res_info = lo_res_info[~lo_res_info.TotalTIL.isna()][['GUPI','TimeStamp','DateComponent','HVICP','HVCPP','TILTimepoint','TotalTIL']]
+
+# Melt out ICP and CPP values to long-form
+lo_res_info = lo_res_info.melt(id_vars=['GUPI','TimeStamp','DateComponent','TILTimepoint','TotalTIL'])
+
+# Remove missing CPP values
+lo_res_info = lo_res_info[~lo_res_info.value.isna()].reset_index(drop=True)
+
+## Filter out rows during/after WLST
+# Find CENTER-TBI patients who experienced WLST
+CENTER_TBI_WLST_patients = pd.read_csv('../CENTER-TBI/WLST_patients.csv',na_values = ["NA","NaN"," ", ""])
+
+# Filter WLST patients in current set
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients[CENTER_TBI_WLST_patients.GUPI.isin(lo_res_info.GUPI)].reset_index(drop=True)
+
+# Find CENTER-TBI patients who died in ICU
+CENTER_TBI_death_patients = pd.read_csv('../CENTER-TBI/death_patients.csv',na_values = ["NA","NaN"," ", ""])
+
+# Add ICU death information to WLST set
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.merge(CENTER_TBI_death_patients[['GUPI','ICUDischargeStatus']],how='left')
+
+# Add ICU discharge information to WLST set
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.merge(CENTER_TBI_datetime[['GUPI','ICUDischTimeStamp']],how='left')
+
+# Convert to long form
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.melt(id_vars=['GUPI','PatientType','DeathERWithdrawalLifeSuppForSeverityOfTBI','WithdrawalTreatmentDecision','DeadSeverityofTBI','DeadAge','DeadCoMorbidities','DeadRequestRelatives','DeadDeterminationOfBrainDeath','ICUDisWithdrawlTreatmentDecision','ICUDischargeStatus','ICUDischTimeStamp'])
+
+# Sort dataframe by date(time) value per patient
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.sort_values(['GUPI','value'],ignore_index=True)
+
+# Find patients who have no non-missing timestamps
+no_non_missing_timestamp_patients = CENTER_TBI_WLST_patients.groupby('GUPI',as_index=False)['value'].agg('count')
+no_non_missing_timestamp_patients = no_non_missing_timestamp_patients[no_non_missing_timestamp_patients['value']==0].reset_index(drop=True)
+
+# Drop missing values entries given that the paient has at least one non-missing vlaue
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients[(~CENTER_TBI_WLST_patients['value'].isna())|(CENTER_TBI_WLST_patients.GUPI.isin(no_non_missing_timestamp_patients.GUPI))].reset_index(drop=True)
+
+# Extract first timestamp (chronologically) from each patient
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.groupby('GUPI',as_index=False).first()
+
+# If patient has all missing timestamps, insert '1970-01-01'
+CENTER_TBI_WLST_patients['value'] = CENTER_TBI_WLST_patients['value'].fillna('1970-01-01')
+
+# Extract 'DateComponent' from timestamp values
+CENTER_TBI_WLST_patients['value'] = pd.to_datetime(CENTER_TBI_WLST_patients['value'].str[:10],format = '%Y-%m-%d').dt.date
+
+# Add dummy column marking WLST
+CENTER_TBI_WLST_patients['WLST'] = 1
+
+# Append WLST date to formatted low-resolution dataframe
+lo_res_info = lo_res_info.merge(CENTER_TBI_WLST_patients.rename(columns={'value':'WLSTDateComponent'})[['GUPI','WLSTDateComponent','WLST']],how='left')
+
+# Fill in missing dummy-WLST markers
+lo_res_info.WLST = lo_res_info.WLST.fillna(0)
+
+# Filter out columns in which DateComponent occurs during or after WLST decision
+lo_res_info = lo_res_info[(lo_res_info.DateComponent<lo_res_info.WLSTDateComponent)|(lo_res_info.WLST==0)].reset_index(drop=True)
+
+## Save modified Daily hourly value dataframes in new directory
+os.makedirs('../formatted_data/',exist_ok=True)
+lo_res_info.to_csv('../formatted_data/formatted_low_resolution_values.csv',index=False)
+
+### IV. Load and prepare high-resolution ICP and CPP information
+## Load and format high-resolution ICP/CPP summary values
+# Load high-resolution ICP/CPP summary values of same day as TIL assessments
+hi_res_info = pd.read_csv('../CENTER-TBI/HighResolution/til_same.csv',na_values = ["NA","NaN"," ", ""])
+
+# Filter columns of interest
+hi_res_info = hi_res_info[['GUPI','TimeStamp','TotalTIL','ICP_mean','CPP_mean']]
+
+# Convert TimeStamp to proper format
+hi_res_info['TimeStamp'] = pd.to_datetime(hi_res_info['TimeStamp'],format = '%Y-%m-%d %H:%M:%S' )
+
+# Melt out ICP and CPP values to long-form
+hi_res_info = hi_res_info.melt(id_vars=['GUPI','TimeStamp','TotalTIL'])
+
+# Remove missing ICP or CPP values
+hi_res_info = hi_res_info[~hi_res_info.value.isna()].reset_index(drop=True)
+
+## Add EVD indicator
+# Load EVD indicator
+evd_indicator = pd.read_csv('../CENTER-TBI/HighResolution/list_EVD.csv',na_values = ["NA","NaN"," ", ""])
+
+# Add column for EVD indicator
+hi_res_info['EVD'] = 0
+
+# Fix EVD indicator
+hi_res_info.EVD[hi_res_info.GUPI.isin(evd_indicator.GUPI)] = 1
+
+## Filter out rows during/after WLST
+# Find CENTER-TBI patients who experienced WLST
+CENTER_TBI_WLST_patients = pd.read_csv('../CENTER-TBI/WLST_patients.csv',na_values = ["NA","NaN"," ", ""])
+
+# Filter WLST patients in current set
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients[CENTER_TBI_WLST_patients.GUPI.isin(hi_res_info.GUPI)].reset_index(drop=True)
+
+# Find CENTER-TBI patients who died in ICU
+CENTER_TBI_death_patients = pd.read_csv('../CENTER-TBI/death_patients.csv',na_values = ["NA","NaN"," ", ""])
+
+# Add ICU death information to WLST set
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.merge(CENTER_TBI_death_patients[['GUPI','ICUDischargeStatus']],how='left')
+
+# Add ICU discharge information to WLST set
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.merge(CENTER_TBI_datetime[['GUPI','ICUDischTimeStamp']],how='left')
+
+# Convert to long form
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.melt(id_vars=['GUPI','PatientType','DeathERWithdrawalLifeSuppForSeverityOfTBI','WithdrawalTreatmentDecision','DeadSeverityofTBI','DeadAge','DeadCoMorbidities','DeadRequestRelatives','DeadDeterminationOfBrainDeath','ICUDisWithdrawlTreatmentDecision','ICUDischargeStatus','ICUDischTimeStamp'])
+
+# Sort dataframe by date(time) value per patient
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.sort_values(['GUPI','value'],ignore_index=True)
+
+# Find patients who have no non-missing timestamps
+no_non_missing_timestamp_patients = CENTER_TBI_WLST_patients.groupby('GUPI',as_index=False)['value'].agg('count')
+no_non_missing_timestamp_patients = no_non_missing_timestamp_patients[no_non_missing_timestamp_patients['value']==0].reset_index(drop=True)
+
+# Drop missing values entries given that the paient has at least one non-missing vlaue
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients[(~CENTER_TBI_WLST_patients['value'].isna())|(CENTER_TBI_WLST_patients.GUPI.isin(no_non_missing_timestamp_patients.GUPI))].reset_index(drop=True)
+
+# Extract first timestamp (chronologically) from each patient
+CENTER_TBI_WLST_patients = CENTER_TBI_WLST_patients.groupby('GUPI',as_index=False).first()
+
+# If patient has all missing timestamps, insert '1970-01-01'
+CENTER_TBI_WLST_patients['value'] = CENTER_TBI_WLST_patients['value'].fillna('1970-01-01')
+
+# Extract 'DateComponent' from timestamp values
+CENTER_TBI_WLST_patients['value'] = pd.to_datetime(CENTER_TBI_WLST_patients['value'].str[:10],format = '%Y-%m-%d').dt.date
+
+# Add dummy column marking WLST
+CENTER_TBI_WLST_patients['WLST'] = 1
+
+# Append WLST date to formatted low-resolution dataframe
+hi_res_info = hi_res_info.merge(CENTER_TBI_WLST_patients.rename(columns={'value':'WLSTDateComponent'})[['GUPI','WLSTDateComponent','WLST']],how='left')
+
+# Fill in missing dummy-WLST markers
+hi_res_info.WLST = hi_res_info.WLST.fillna(0)
+
+# Filter out columns in which DateComponent occurs during or after WLST decision
+hi_res_info = hi_res_info[(hi_res_info.TimeStamp.dt.date<hi_res_info.WLSTDateComponent)|(hi_res_info.WLST==0)].reset_index(drop=True)
+
+## Save modified hi-resolution value dataframes in new directory
+os.makedirs('../formatted_data/',exist_ok=True)
+hi_res_info.to_csv('../formatted_data/formatted_high_resolution_values.csv',index=False)
+
+### V. Load and prepare demographic information and baseline characteristics
+## Load demographic and outcome scores of patients in TIL dataframe
+# Load low-resolution value dataframe
+lo_res_info = pd.read_csv('../formatted_data/formatted_low_resolution_values.csv')
+
+# Load high-resolution value dataframe
+hi_res_info = pd.read_csv('../formatted_data/formatted_high_resolution_values.csv')
 
 # Load CENTER-TBI dataset demographic information
 CENTER_TBI_demo_info = pd.read_csv('../CENTER-TBI/DemoInjHospMedHx/data.csv',na_values = ["NA","NaN"," ", ""])
 
-# Filter study set patients
-CENTER_TBI_demo_info = CENTER_TBI_demo_info[CENTER_TBI_demo_info.GUPI.isin(mod_daily_TIL_info.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
-
 # Select columns that indicate pertinent baseline and outcome information
-CENTER_TBI_demo_outcome = CENTER_TBI_demo_info[['GUPI','PatientType','Age','Sex','Race','GCSScoreBaselineDerived','GOSE6monthEndpointDerived']].reset_index(drop=True)
+CENTER_TBI_demo_info = CENTER_TBI_demo_info[['GUPI','PatientType','SiteCode','Age','Sex','Race','GCSScoreBaselineDerived','GOSE6monthEndpointDerived']].reset_index(drop=True)
 
 # Load and filter CENTER-TBI IMPACT dataframe
 IMPACT_df = pd.read_csv('../CENTER-TBI/IMPACT/data.csv').rename(columns={'entity_id':'GUPI'})
-IMPACT_df = IMPACT_df[IMPACT_df.GUPI.isin(CENTER_TBI_demo_outcome.GUPI)][['GUPI','SiteCode','marshall']].rename(columns={'marshall':'MarshallCT'}).reset_index(drop=True)
+IMPACT_df = IMPACT_df[['GUPI','marshall']].rename(columns={'marshall':'MarshallCT'}).reset_index(drop=True)
 
 # Merge IMPACT-sourced information to outcome and demographic dataframe
-CENTER_TBI_demo_outcome = CENTER_TBI_demo_outcome.merge(IMPACT_df,how='left')
+CENTER_TBI_demo_info = CENTER_TBI_demo_info.merge(IMPACT_df,how='left')
+
+# Add indicators for inclusion in low- and high-resolution subsets
+CENTER_TBI_demo_info['LowResolutionSet'] = 0
+CENTER_TBI_demo_info['HighResolutionSet'] = 0
+
+# Fill in indicators
+CENTER_TBI_demo_info.LowResolutionSet[CENTER_TBI_demo_info.GUPI.isin(lo_res_info.GUPI)] = 1
+CENTER_TBI_demo_info.HighResolutionSet[CENTER_TBI_demo_info.GUPI.isin(hi_res_info.GUPI)] = 1
+
+# Filter study set patients
+CENTER_TBI_demo_info = CENTER_TBI_demo_info[(CENTER_TBI_demo_info.LowResolutionSet==1)|(CENTER_TBI_demo_info.HighResolutionSet==1)].dropna(axis=1,how='all').reset_index(drop=True)
 
 # Load and prepare ordinal prediction estimates
 ordinal_prediction_estimates = pd.read_csv('../../ordinal_GOSE_prediction/APM_outputs/DEEP_v1-0/APM_deepMN_compiled_test_predictions.csv').drop(columns='Unnamed: 0')
-ordinal_prediction_estimates = ordinal_prediction_estimates[(ordinal_prediction_estimates.GUPI.isin(CENTER_TBI_demo_outcome.GUPI))&(ordinal_prediction_estimates.TUNE_IDX==8)].reset_index(drop=True)
+ordinal_prediction_estimates = ordinal_prediction_estimates[(ordinal_prediction_estimates.GUPI.isin(CENTER_TBI_demo_info.GUPI))&(ordinal_prediction_estimates.TUNE_IDX==8)].reset_index(drop=True)
 prob_cols = [col for col in ordinal_prediction_estimates if col.startswith('Pr(GOSE=')]
 prob_matrix = ordinal_prediction_estimates[prob_cols]
 thresh_labels = ['GOSE>1','GOSE>3','GOSE>4','GOSE>5','GOSE>6','GOSE>7']
@@ -661,63 +869,101 @@ ordinal_prediction_estimates = ordinal_prediction_estimates.melt(id_vars=['GUPI'
 ordinal_prediction_estimates = pd.pivot_table(ordinal_prediction_estimates, values = 'Probability', index=['GUPI'], columns = 'Threshold').reset_index()
 
 # Merge ordinal prognosis estimates to outcome and demographic dataframe
-CENTER_TBI_demo_outcome = CENTER_TBI_demo_outcome.merge(ordinal_prediction_estimates,how='left')
+CENTER_TBI_demo_info = CENTER_TBI_demo_info.merge(ordinal_prediction_estimates,how='left')
 
 ## Save baseline demographic and functional outcome score dataframe
 # Create directory, if it does not exist, to store formatted dataframes
 os.makedirs('../formatted_data/',exist_ok=True)
 
 # Save dataframe
-CENTER_TBI_demo_outcome.to_csv('../formatted_data/formatted_outcome_and_demographics.csv',index=False)
+CENTER_TBI_demo_info.to_csv('../formatted_data/formatted_outcome_and_demographics.csv',index=False)
 
-### V. Prepare dataframe of high-resolution sub-study patients
-## Identify patients for whom TIL and high-resolution ICP information are available
-# Load modified Daily TIL dataframes
-mod_daily_TIL_info = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+### VI. Load and prepare information from prior study data
+## Load prior study dataframes
+# Main database extraction
+main_database_extraction = pd.read_excel('../prior_study_data/SPSS_Main_Database.xlsx',na_values = ["NA","NaN"," ", "","#NULL!"]).dropna(axis=1,how='all').dropna(subset=['Pt'],how='all').reset_index(drop=True)
 
-# Load dataframe of patients with high-resolution data
-hi_res_patients = pd.read_excel('../high_res_patients.xlsx',na_values = ["NA","NaN"," ", ""])
+# Create dataframe to visually inspect columns
+main_database_columns = pd.DataFrame(main_database_extraction.columns,columns=['ColumnName'])
 
-# Filter modified daily TIL information to high-resolution sub-study
-hi_res_daily_TIL_info = mod_daily_TIL_info[mod_daily_TIL_info.GUPI.isin(hi_res_patients.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
+# ICP vs TIL dataframe
+ICP_TIL_in_TBI_ICU_df = pd.read_excel('../prior_study_data/ICP_vs_TIL_in_TBI_ICU.xlsx',na_values = ["NA","NaN"," ", "","#NULL!"]).dropna(axis=1,how='all').dropna(subset=['CamGro_ID'],how='all').rename(columns={'CamGro_ID':'Pt'}).reset_index(drop=True)
 
-# Select pertinent columns of dataframe
-hi_res_daily_TIL_info = hi_res_daily_TIL_info[['GUPI','PatientType','TotalTIL','TimeStamp']]
+# Full TIL dataframe
+prior_TIL_df = pd.read_csv('../prior_study_data/TIL.csv',na_values = ["NA","NaN"," ", "","#NULL!"]).dropna(axis=1,how='all').dropna(subset=['CamGro_ID'],how='all').rename(columns={'CamGro_ID':'Pt'}).reset_index(drop=True)
 
-## Check available hi-res files and determine if EVD
-# Identify directory of current hi-res data
-hi_res_dir = '../CENTER-TBI/HighResolution/10sec_windows/'
+## Extract demographic information
+# First, identify TBI patients in ICU cohort
+TBI_ICU_patients = np.sort(ICP_TIL_in_TBI_ICU_df.Pt.unique())
 
-# Create list of high resolution CSVs
-curr_list_of_csvs = []
-for path in Path(hi_res_dir).rglob('*.csv'):
-    curr_list_of_csvs.append(str(path.resolve()))
+# Filter TBI-ICU patients from main database extraction
+filt_main_database_extraction = main_database_extraction[main_database_extraction.Pt.isin(TBI_ICU_patients)].dropna(axis=1,how='all').reset_index(drop=True)
 
-# Characterise filed by GUPI and EVD-type
-curr_csv_info_df = pd.DataFrame({'FILE':curr_list_of_csvs,'GUPI':[re.search('10sec_windows/(.*).csv', curr_file).group(1) for curr_file in curr_list_of_csvs]}).sort_values(by=['GUPI']).reset_index(drop=True)
-curr_csv_info_df['EVD'] = curr_csv_info_df.GUPI.str.contains('EVD')
-curr_csv_info_df.GUPI = curr_csv_info_df.GUPI.str.replace('EVD/','')
+# Select demographic columns and rename columns to match CENTER-TBI format
+filt_main_database_extraction = filt_main_database_extraction[['Pt','HospID','Age','Gender','GCS','GOS','Marshall_OLD']].drop_duplicates(ignore_index=True).rename(columns={'Pt':'GUPI','HospID':'SiteCode','Gender':'Sex','GCS':'GCSScoreBaselineDerived','GOS':'GOS6monthEndpointDerived','Marshall_OLD':'MarshallCT'})
 
-# Add EVD indicator to `hi_res_daily_TIL_info` dataframe
-hi_res_daily_TIL_info = hi_res_daily_TIL_info.merge(curr_csv_info_df[['GUPI','EVD']],how='left')
+# Save extracted demographic information from prior study
+filt_main_database_extraction.to_csv('../formatted_data/prior_study_formatted_outcome_and_demographics.csv',index=False)
 
-## Prepare dataframe with empty columns representing target values
-# Create a dataframe of all combinations of target columns
-timespans = ['samedate','24hbefore','12hbefore12hafter','24hafter']
-waveform = ['ICP','CPP']
-metrics = ['n','mean','std','min','q1','median','q3','max']
-target_columns = pd.DataFrame(list(itertools.product(timespans,waveform,metrics)), columns=['timespans','waveform','metrics'])
-target_columns['label'] = target_columns.metrics + '_' + target_columns.waveform + '_' + target_columns.timespans
+### VII. Load and prepare serum sodium values from CENTER-TBI
+## Load and prepare sodium values
+# Load sodium lab values
+sodium_values = pd.read_csv('../CENTER-TBI/Labs/data.csv',na_values = ["NA","NaN"," ", ""])[['GUPI','DLDate','DLTime','DLSodiummmolL']].dropna(subset=['DLDate','DLSodiummmolL'],how='any').sort_values(by=['GUPI','DLDate']).reset_index(drop=True)
 
-# Add empty columns of target values to dataframe
-target_hi_res_daily_TIL_info = hi_res_daily_TIL_info.reindex(columns=hi_res_daily_TIL_info.columns.tolist()+target_columns.label.tolist())
+# Convert `DLDate` to timestamp format
+sodium_values['DateComponent'] = pd.to_datetime(sodium_values['DLDate'],format = '%Y-%m-%d')
 
-## Save requisite dataframes
-# High-resolution patient TIL timestamps
-hi_res_daily_TIL_info.to_csv('../CENTER-TBI/HighResolution/high_res_TIL_timestamps.csv',index=False)
+# Calculate daily mean sodium
+sodium_values = sodium_values.groupby(['GUPI','DateComponent'],as_index=False).DLSodiummmolL.aggregate({'meanSodium':'mean','nSodium':'count'})
 
-# List of target measures to calculate from high-resolution data
-target_columns.to_csv('../CENTER-TBI/HighResolution/high_resolution_metrics.csv',index=False)
+# Load formatted TIL values and add row index
+formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
 
-# High-resolution patient TIL timestamps with empty target columns
-target_hi_res_daily_TIL_info.to_csv('../CENTER-TBI/HighResolution/sample_result_dataframe.csv',index=False)
+# Load baseline demographic and functional outcome score dataframe
+CENTER_TBI_demo_outcome = pd.read_csv('../formatted_data/formatted_outcome_and_demographics.csv')
+
+# Load formatted low-resolution values
+formatted_lo_res_values = pd.read_csv('../formatted_data/formatted_low_resolution_values.csv')
+
+# Load formatted high-resolution values
+formatted_hi_res_values = pd.read_csv('../formatted_data/formatted_high_resolution_values.csv')
+
+# Merge set assignment to formatted TIL dataframe
+formatted_TIL_scores = formatted_TIL_scores.merge(CENTER_TBI_demo_outcome[['GUPI','LowResolutionSet','HighResolutionSet']],how='left')
+
+# Keep only GUPIs either in low- or high-resolution set
+formatted_TIL_scores = formatted_TIL_scores[(formatted_TIL_scores.LowResolutionSet==1)|(formatted_TIL_scores.HighResolutionSet==1)].reset_index(drop=True)
+
+# Merge WLST information onto formatted TIL dataframe
+formatted_TIL_scores = formatted_TIL_scores.merge(pd.concat([formatted_lo_res_values[['GUPI','WLSTDateComponent','WLST']],formatted_hi_res_values[['GUPI','WLSTDateComponent','WLST']]],ignore_index=True).drop_duplicates(ignore_index=True),how='left')
+
+# Convert dated timestamps to proper data format
+formatted_TIL_scores.WLSTDateComponent = pd.to_datetime(formatted_TIL_scores.WLSTDateComponent,format = '%Y-%m-%d')
+formatted_TIL_scores.DateComponent = pd.to_datetime(formatted_TIL_scores.DateComponent,format = '%Y-%m-%d')
+
+# Keep only rows before decision to WLST or no WLST at all
+formatted_TIL_scores = formatted_TIL_scores[(formatted_TIL_scores.DateComponent<formatted_TIL_scores.WLSTDateComponent)|(formatted_TIL_scores.WLST==0)].reset_index(drop=True)
+
+# Keep only columns from formatted TIL dataframe
+formatted_TIL_scores = formatted_TIL_scores[['GUPI','LowResolutionSet','HighResolutionSet','DateComponent','TILTimepoint','TILHyperosmolarThearpy','TILMannitolDose','TILHyperosomolarTherapyMannitolGreater2g','TILHypertonicSalineDose','TILHyperosomolarTherapyHypertonicLow','TILHyperosomolarTherapyHigher','TotalTIL']]
+
+# Add column marking mannitol use
+formatted_TIL_scores['MannitolUse'] = (formatted_TIL_scores.TILHyperosmolarThearpy>0)|(formatted_TIL_scores.TILMannitolDose>0)|(formatted_TIL_scores.TILHyperosomolarTherapyMannitolGreater2g>0)
+
+# Add column marking saline use
+formatted_TIL_scores['SalineUse'] = (formatted_TIL_scores.TILHypertonicSalineDose>0)|(formatted_TIL_scores.TILHyperosomolarTherapyHypertonicLow>0)|(formatted_TIL_scores.TILHyperosomolarTherapyHigher>0)
+
+# Remove rows in which mannitol use is unaccompanied by saline use
+formatted_TIL_scores = formatted_TIL_scores[~((formatted_TIL_scores.MannitolUse)&(~formatted_TIL_scores.SalineUse))].reset_index(drop=True)
+
+# Remove unneccessary columns
+formatted_TIL_scores = formatted_TIL_scores[['GUPI','LowResolutionSet','HighResolutionSet','DateComponent','TILTimepoint','MannitolUse','SalineUse','TotalTIL']]
+
+# Merge sodium values to formatted TIL dataframe
+sodium_TIL_dataframe = formatted_TIL_scores.merge(sodium_values,how='left')
+
+# Remove rows with missing sodium values
+sodium_TIL_dataframe = sodium_TIL_dataframe.dropna(subset='meanSodium').drop_duplicates(ignore_index=True)
+
+## Save prepared sodium values
+sodium_TIL_dataframe.to_csv('../formatted_data/formatted_daily_sodium_values.csv',index=False)
