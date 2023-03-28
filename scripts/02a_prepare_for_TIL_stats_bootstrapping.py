@@ -9,10 +9,6 @@
 # II. Load and prepare correlation dataframes
 # III. Draw resamples for bootstrapping
 
-# III. Calculate population-level summary characteristics
-# IV. Calculate population-level TIL correlations with overall characteristics
-# V. Calculate TIL correlations with ICP measures
-
 ### I. Initialisation
 # Fundamental libraries
 import os
