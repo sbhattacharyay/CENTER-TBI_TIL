@@ -11,6 +11,7 @@ import itertools
 import numpy as np
 import pandas as pd
 import pickle as cp
+from tqdm import tqdm
 import seaborn as sns
 import multiprocessing
 from scipy import stats
@@ -32,3 +33,18 @@ def spearman_rho(x,column_name):
     d['p_val'] = curr_sr.pvalue
     d['count'] = x.shape[0]
     return pd.Series(d, index=['rho', 'p_val', 'count'])
+
+# Define function to load statistics
+def load_statistics(info_df, progress_bar=True, progress_bar_desc=''):
+    
+    compiled_statistics = []
+        
+    if progress_bar:
+        iterator = tqdm(range(info_df.shape[0]),desc=progress_bar_desc)
+    else:
+        iterator = range(info_df.shape[0])
+        
+    # Load each validation statistics file
+    for curr_row in iterator:
+        compiled_statistics.append(pd.read_pickle(info_df.FILE[curr_row]))      
+    return pd.concat(compiled_statistics,ignore_index=True)
