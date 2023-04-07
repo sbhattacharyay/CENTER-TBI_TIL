@@ -36,7 +36,7 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
 # Custom methods
-from functions.analysis import spearman_rho
+from functions.analysis import spearman_rho, melm_R2
 
 # Initialise directory for storing bootstrapping resamples
 bs_dir = '../bootstrapping_results/resamples'

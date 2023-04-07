@@ -7,6 +7,7 @@
 ### Contents:
 # I. Initialisation
 # II. Compile and save bootstrapped TIL correlations and statistics
+# III. Calculate 95% confidence intervals
 
 ### I. Initialisation
 # Fundamental libraries
@@ -81,7 +82,24 @@ with multiprocessing.Pool(NUM_CORES) as pool:
 # Save compiled statistics
 compiled_mixed_effects.to_csv('../bootstrapping_results/compiled_mixed_effects_results.csv',index=False)
 compiled_spearman_rhos.to_csv('../bootstrapping_results/compiled_spearman_rhos_results.csv',index=False)
-    
-# Caclulate 95% confidence intervals
-CI_spearman_rhos = compiled_spearman_rhos.groupby(['population','first','second'],as_index=False)['rho'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'resamples':'count'}).reset_index(drop=True)
-CI_mixed_effects = compiled_mixed_effects.groupby(['population','first','second'],as_index=False)['TIL_coefficients'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'resamples':'count'}).reset_index(drop=True)
+
+### III. Calculate 95% confidence intervals
+## Load compiled statistics
+# Load mixed effects values
+compiled_mixed_effects = pd.read_csv('../bootstrapping_results/compiled_mixed_effects_results.csv')
+
+# Load Spearman's rho values
+compiled_spearman_rhos = pd.read_csv('../bootstrapping_results/compiled_spearman_rhos_results.csv')
+
+## Caclulate and format 95% confidence intervals
+# Caclulate and format 95% confidence intervals
+CI_spearman_rhos = compiled_spearman_rhos.groupby(['population','first','second'],as_index=False)['rho'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+CI_mixed_effects = compiled_mixed_effects.groupby(['population','first','second'],as_index=False)['TIL_coefficients'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+
+# Add formatting confidence interval 
+CI_spearman_rhos['FormattedCI'] = CI_spearman_rhos['median'].round(2).astype(str)+' ('+CI_spearman_rhos.lo.round(2).astype(str)+'–'+CI_spearman_rhos.hi.round(2).astype(str)+')'
+CI_mixed_effects['FormattedCI'] = CI_mixed_effects['median'].round(2).astype(str)+' ('+CI_mixed_effects.lo.round(2).astype(str)+'–'+CI_mixed_effects.hi.round(2).astype(str)+')'
+
+# Save formatted confidence intervals
+CI_mixed_effects.to_csv('../bootstrapping_results/CI_mixed_effects_results.csv',index=False)
+CI_spearman_rhos.to_csv('../bootstrapping_results/CI_spearman_rhos_results.csv',index=False)

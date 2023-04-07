@@ -12,6 +12,7 @@
 # V. Load and prepare demographic information and baseline characteristics
 # VI. Load and prepare information from prior study data
 # VII. Load and prepare serum sodium values from CENTER-TBI
+# VIII. Calculate TIL_1987 values
 
 ### I. Initialisation
 # Fundamental libraries
@@ -967,3 +968,141 @@ sodium_TIL_dataframe = sodium_TIL_dataframe.dropna(subset='meanSodium').drop_dup
 
 ## Save prepared sodium values
 sodium_TIL_dataframe.to_csv('../formatted_data/formatted_daily_sodium_values.csv',index=False)
+
+### VIII. Calculate TIL_1987 values
+## Load and prepare formatted TIL_1987 values from CENTER-TBI
+# Load formatted TIL values and add row index
+formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+
+# Load baseline demographic and functional outcome score dataframe
+CENTER_TBI_demo_outcome = pd.read_csv('../formatted_data/formatted_outcome_and_demographics.csv')
+
+# Load formatted low-resolution values
+formatted_lo_res_values = pd.read_csv('../formatted_data/formatted_low_resolution_values.csv')
+
+# Load formatted high-resolution values
+formatted_hi_res_values = pd.read_csv('../formatted_data/formatted_high_resolution_values.csv')
+
+# Merge set assignment to formatted TIL dataframe
+formatted_TIL_scores = formatted_TIL_scores.merge(CENTER_TBI_demo_outcome[['GUPI','LowResolutionSet','HighResolutionSet']],how='left')
+
+# Keep only GUPIs either in low- or high-resolution set
+formatted_TIL_scores = formatted_TIL_scores[(formatted_TIL_scores.LowResolutionSet==1)|(formatted_TIL_scores.HighResolutionSet==1)].reset_index(drop=True)
+
+# Merge WLST information onto formatted TIL dataframe
+formatted_TIL_scores = formatted_TIL_scores.merge(pd.concat([formatted_lo_res_values[['GUPI','WLSTDateComponent','WLST']],formatted_hi_res_values[['GUPI','WLSTDateComponent','WLST']]],ignore_index=True).drop_duplicates(ignore_index=True),how='left')
+
+# Convert dated timestamps to proper data format
+formatted_TIL_scores.WLSTDateComponent = pd.to_datetime(formatted_TIL_scores.WLSTDateComponent,format = '%Y-%m-%d')
+formatted_TIL_scores.DateComponent = pd.to_datetime(formatted_TIL_scores.DateComponent,format = '%Y-%m-%d')
+
+# Keep only rows before decision to WLST or no WLST at all
+formatted_TIL_scores = formatted_TIL_scores[(formatted_TIL_scores.DateComponent<formatted_TIL_scores.WLSTDateComponent)|(formatted_TIL_scores.WLST==0)].reset_index(drop=True)
+
+# Create new dataframe to store TIL_1987 values for CENTER-TBI
+TIL_1987_scores = formatted_TIL_scores[['GUPI','DateComponent','LowResolutionSet','HighResolutionSet','TimeStamp','TILTimepoint','TotalTIL']]
+
+# Add marker for barbiturate administration
+TIL_1987_scores['TIL_Barbiturate'] = 3*(formatted_TIL_scores.TILSedationMetabolic == 1).astype(int)
+
+# Add marker for mannitol administration
+TIL_1987_scores['TIL_Mannitol'] = 0
+TIL_1987_scores['TIL_Mannitol'][formatted_TIL_scores.TILHyperosmolarThearpy == 1] = 3
+TIL_1987_scores['TIL_Mannitol'][formatted_TIL_scores.TILHyperosomolarTherapyMannitolGreater2g == 1] = 6
+
+# Add marker for ventricular drainage
+TIL_1987_scores['TIL_Ventricular'] = 0
+TIL_1987_scores['TIL_Ventricular'][formatted_TIL_scores.TILCSFDrainage == 1] = 1
+TIL_1987_scores['TIL_Ventricular'][(formatted_TIL_scores.TILCCSFDrainageVolume>=120)|(formatted_TIL_scores.TILFluidOutCSFDrain>=120)] = 2
+
+# Add marker for hyperventilation
+TIL_1987_scores['TIL_Hyperventilation'] = 0
+TIL_1987_scores['TIL_Hyperventilation'][(formatted_TIL_scores.TILHyperventilation == 1)|(formatted_TIL_scores.TILHyperventilationModerate == 1)] = 1
+TIL_1987_scores['TIL_Hyperventilation'][formatted_TIL_scores.TILHyperventilationIntensive == 1] = 2
+
+# Add marker for paralysis induction
+TIL_1987_scores['TIL_Paralysis'] = 1*(formatted_TIL_scores.TILSedationNeuromuscular == 1).astype(int)
+
+# Add marker for sedation
+TIL_1987_scores['TIL_Sedation'] = 1*((formatted_TIL_scores.TILSedation == 1)|(formatted_TIL_scores.TILSedationHigher == 1)).astype(int)
+
+# Calculate TIL_1987
+TIL_1987_scores['TIL_1987'] = TIL_1987_scores.TIL_Barbiturate + TIL_1987_scores.TIL_Mannitol + TIL_1987_scores.TIL_Ventricular + TIL_1987_scores.TIL_Hyperventilation + TIL_1987_scores.TIL_Paralysis + TIL_1987_scores.TIL_Sedation
+
+# Save calculated TIL_1987 values
+TIL_1987_scores.to_csv('../formatted_data/formatted_TIL_1987_scores.csv',index=False)
+
+## Load and prepare formatted TIL_1987 values from prior study
+# Load prior study TIL values
+prior_study_database_extraction = pd.read_excel('../prior_study_data/SPSS_Main_Database.xlsx',na_values = ["NA","NaN"," ", "","#NULL!"]).dropna(axis=1,how='all').dropna(subset=['Pt'],how='all').rename(columns={'Pt':'GUPI'}).reset_index(drop=True)
+prior_study_database_extraction['RowIdx'] = prior_study_database_extraction.groupby('GUPI').cumcount()
+
+# Load prior study demographic and functional outcome score dataframe
+prior_study_demo_outcome = pd.read_csv('../formatted_data/prior_study_formatted_outcome_and_demographics.csv')
+
+# Load prior study ICU-TIL data from separate dataframe and add RowIdx
+prior_study_ICP_TIL = pd.read_excel('../prior_study_data/ICP_vs_TIL_in_TBI_ICU.xlsx',na_values = ["NA","NaN"," ", "","#NULL!"]).rename(columns={'CamGro_ID':'GUPI','TIL_4h':'TIL_corrob','meanICP':'MeanICP'})
+prior_study_ICP_TIL['RowIdx'] = prior_study_ICP_TIL.groupby('GUPI').cumcount()
+
+# Focus on in-study population
+prior_study_database_extraction = prior_study_database_extraction[prior_study_database_extraction.GUPI.isin(prior_study_demo_outcome.GUPI)].reset_index(drop=True)
+
+# Determine rows with missing TIL scores
+missing_TIL_rows = prior_study_database_extraction[prior_study_database_extraction.TIL_sum.isna()].reset_index(drop=True)
+
+# Keep only ICU-TIL data that matches with missing rows
+prior_study_ICP_TIL = prior_study_ICP_TIL.merge(missing_TIL_rows,how='inner').reset_index(drop=True)
+
+# Merge corroborated TIL scores onto inital dataframe
+prior_study_database_extraction = prior_study_database_extraction.merge(prior_study_ICP_TIL,how='left')
+
+# In cases for which TIL_sum is missing, replace with `TIL_corrob`
+prior_study_database_extraction.TIL_sum[prior_study_database_extraction.TIL_sum.isna()] = prior_study_database_extraction.TIL_corrob[prior_study_database_extraction.TIL_sum.isna()]
+
+# If TIL_sum is still missing, replace with `TIL_4h_PAT`
+prior_study_database_extraction.TIL_sum[prior_study_database_extraction.TIL_sum.isna()] = prior_study_database_extraction.TIL_4h_PAT[prior_study_database_extraction.TIL_sum.isna()]
+
+# Sort dataframe
+prior_study_database_extraction = prior_study_database_extraction.sort_values(by=['GUPI','Period']).reset_index(drop=True)
+
+# Create new dataframe to store TIL_1987 values for prior study
+prior_study_TIL_1987_scores = prior_study_database_extraction[['GUPI','Start','End','Period','TIL_sum']]
+
+# Add marker for barbiturate administration
+prior_study_TIL_1987_scores['TIL_Barbiturate'] = 3*(prior_study_database_extraction.Barbiturates == 1).astype(int)
+
+# Add marker for mannitol administration
+prior_study_TIL_1987_scores['TIL_Mannitol'] = 0
+prior_study_TIL_1987_scores['TIL_Mannitol'][(prior_study_database_extraction.Mannitol_perKG/4 <= 1)] = 3
+prior_study_TIL_1987_scores['TIL_Mannitol'][(prior_study_database_extraction.Mannitol_perKG/4 > 1)] = 6
+
+# Add marker for ventricular drainage
+prior_study_TIL_1987_scores['TIL_Ventricular'] = 0
+prior_study_TIL_1987_scores['TIL_Ventricular'][prior_study_database_extraction.TIL_CSF == 2] = 1
+prior_study_TIL_1987_scores['TIL_Ventricular'][prior_study_database_extraction.TIL_CSF == 3] = 2
+
+# Add marker for hyperventilation
+prior_study_TIL_1987_scores['TIL_Hyperventilation'] = 0
+prior_study_TIL_1987_scores['TIL_Hyperventilation'][(prior_study_database_extraction.CO2_TIL == 1)|(prior_study_database_extraction.CO2_TIL == 2)] = 1
+prior_study_TIL_1987_scores['TIL_Hyperventilation'][prior_study_database_extraction.CO2_TIL == 4] = 2
+
+# Add marker for paralysis induction
+prior_study_TIL_1987_scores['TIL_Paralysis'] = 1*(prior_study_database_extraction.Paralysis == 1).astype(int)
+
+# Add marker for sedation
+prior_study_TIL_1987_scores['TIL_Sedation'] = 1*((prior_study_database_extraction.TIL_SED == 1)|(prior_study_database_extraction.TIL_SED == 2)).astype(int)
+
+# Add column representing date component of end timestamp
+prior_study_TIL_1987_scores['DateComponent'] = prior_study_TIL_1987_scores['End'].dt.date
+
+# Calculate TIL24
+prior_study_dailyTILs = prior_study_TIL_1987_scores.groupby(['GUPI','DateComponent'],as_index=False).TIL_sum.max().rename(columns={'TIL_sum':'TotalTIL'})
+
+# Calculate TIL_1987_24
+prior_study_dailyTIL_1987s = prior_study_TIL_1987_scores[['GUPI','DateComponent','TIL_Barbiturate','TIL_Mannitol', 'TIL_Ventricular', 'TIL_Hyperventilation','TIL_Paralysis', 'TIL_Sedation']].melt(id_vars=['GUPI','DateComponent']).groupby(['GUPI','DateComponent','variable'],as_index=False)['value'].max().groupby(['GUPI','DateComponent'],as_index=False)['value'].sum().rename(columns={'value':'TIL_1987'})
+
+# Merge dataframes and save
+prior_study_TIL_1987_scores = prior_study_dailyTILs.merge(prior_study_dailyTIL_1987s,how='left')
+
+# Remove unneccessary columns
+prior_study_TIL_1987_scores.to_csv('../formatted_data/prior_study_formatted_TIL_1987_scores.csv',index=False)

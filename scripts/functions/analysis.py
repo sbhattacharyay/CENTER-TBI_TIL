@@ -34,6 +34,16 @@ def spearman_rho(x,column_name):
     d['count'] = x.shape[0]
     return pd.Series(d, index=['rho', 'p_val', 'count'])
 
+# Define function to calculate marginal and conditional R2 from mixed effect linear models
+def melm_R2(fitted_lmer):
+    var_resid = fitted_lmer.scale
+    var_random_effect = float(fitted_lmer.cov_re.iloc[0])
+    var_fixed_effect = fitted_lmer.fittedvalues.var()
+    total_var = var_fixed_effect + var_random_effect + var_resid
+    marginal_r2 = var_fixed_effect / total_var
+    conditional_r2 = (var_fixed_effect + var_random_effect) / total_var
+    return (marginal_r2,conditional_r2)
+
 # Define function to load statistics
 def load_statistics(info_df, progress_bar=True, progress_bar_desc=''):
     
