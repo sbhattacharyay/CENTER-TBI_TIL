@@ -4,7 +4,7 @@
 #SBATCH -p icelake
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --time=00:20:00
+#SBATCH --time=00:30:00
 #SBATCH --array=0-999
 #SBATCH --mail-type=NONE
 #SBATCH --output=/home/sb2406/CENTER-TBI_TIL/bootstrapping_results/hpc_logs/TIL_correlations_trial_%a.out

@@ -24,6 +24,7 @@ library(openxlsx)
 library(gridExtra)
 library(extrafont)
 library(rmcorr)
+library(lme4)
 
 # Import custom plotting functions
 source('functions/plotting.R')
@@ -31,10 +32,14 @@ source('functions/plotting.R')
 ### II. 
 ## Load and prepare Spearman's Rho results
 # Load Spearman's Rho confidence interval dataframe
-CI_spearman_rhos <- read.csv('../bootstrapping_results/CI_spearman_rhos_results.csv',
-                             na.strings = c("NA","NaN","", " ")) %>%
+CI_spearman_rhos <- rbind(read.csv('../bootstrapping_results/CI_spearman_rhos_results.csv',
+                                   na.strings = c("NA","NaN","", " ")),
+                          read.csv('../bootstrapping_results/1987_CI_spearman_rhos_results.csv',
+                                   na.strings = c("NA","NaN","", " "))) %>%
   mutate(FormattedCombos = factor(paste(second,first,sep = ' vs. '),
-                                  levels = c('ICPmean vs. TILmean',
+                                  levels = c('TIL_1987mean vs. TILmean',
+                                             'TIL_1987max vs. TILmax',
+                                             'ICPmean vs. TILmean',
                                              'ICPmax vs. TILmax',
                                              'CPPmean vs. TILmean',
                                              'CPPmax vs. TILmax',
@@ -92,25 +97,31 @@ spearmans_correlation_plot <- CI_spearman_rhos %>%
 
 # Create directory for current date and save Spearman's correlation plot
 dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
-ggsave(file.path('../plots',Sys.Date(),'spearmans_correlation.svg'),spearmans_correlation_plot,device= svglite,units='in',dpi=600,width=3.75,height = 5.5)
+ggsave(file.path('../plots',Sys.Date(),'spearmans_correlation.svg'),spearmans_correlation_plot,device= svglite,units='in',dpi=600,width=3.75,height = 5.91)
 
 ### III.
 ## Load and prepare mixed effects modelling results
 # Load repeated measures correlation confidence interval dataframe
-CI_rm_correlations <- read.csv('../bootstrapping_results/CI_rm_correlation_results.csv',
-                             na.strings = c("NA","NaN","", " ")) %>%
+CI_rm_correlations <- rbind(read.csv('../bootstrapping_results/CI_rm_correlation_results.csv',
+                                     na.strings = c("NA","NaN","", " ")),
+                            read.csv('../bootstrapping_results/1987_CI_rm_correlation_results.csv',
+                                     na.strings = c("NA","NaN","", " "))) %>%
   mutate(FormattedCombos = factor(paste(second,first,sep = ' vs. '),
-                                  levels = c('ICP24 vs. TIL24',
+                                  levels = c('TIL_1987_24 vs. TIL24',
+                                             'ICP24 vs. TIL24',
                                              'CPP24 vs. TIL24',
                                              'NA24 vs. TIL24')),
          population = factor(population,
                              levels = c('PriorStudy','HighResolution','LowResolution')))
 
 # Load mixed effects modelling confidence interval dataframe
-CI_mixed_effects <- read.csv('../bootstrapping_results/CI_mixed_effects_results.csv',
-                             na.strings = c("NA","NaN","", " ")) %>%
+CI_mixed_effects <- rbind(read.csv('../bootstrapping_results/CI_mixed_effects_results.csv',
+                                   na.strings = c("NA","NaN","", " ")),
+                          read.csv('../bootstrapping_results/1987_CI_mixed_effects_results.csv',
+                                   na.strings = c("NA","NaN","", " "))) %>%
   mutate(FormattedCombos = factor(paste(second,first,sep = ' ~ '),
-                                  levels = c('ICP24 ~ TIL24',
+                                  levels = c('TIL_1987_24 ~ TIL24',
+                                             'ICP24 ~ TIL24',
                                              'CPP24 ~ TIL24',
                                              'NA24 ~ TIL24')),
          population = factor(population,
@@ -148,12 +159,12 @@ mixed_effect_coefficients <- CI_mixed_effects %>%
 
 # Create directory for current date and save Spearman's correlation plot
 dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
-ggsave(file.path('../plots',Sys.Date(),'mixed_effect_coefficients.svg'),mixed_effect_coefficients,device= svglite,units='in',dpi=600,width=3.75,height = 2.05)
+ggsave(file.path('../plots',Sys.Date(),'mixed_effect_coefficients.svg'),mixed_effect_coefficients,device= svglite,units='in',dpi=600,width=3.75,height = 2.25)
 
 ## Create `ggplot` object
 rm_correlation_coefficients <- CI_rm_correlations %>%
   ggplot() +
-  coord_cartesian(xlim = c(-0.2,0.45274355)) +
+  coord_cartesian(xlim = c(-0.2,0.82)) +
   scale_x_continuous(expand = expansion(mult = c(.01, .01)))+
   geom_vline(xintercept = 0, color = "darkgray") +
   geom_errorbarh(aes(y = FormattedCombos, group = population, xmin = lo, xmax = hi, color = population, linetype = population),position=position_dodge(width=.5), height=.5)+
@@ -182,7 +193,7 @@ rm_correlation_coefficients <- CI_rm_correlations %>%
 
 # Create directory for current date and save Spearman's correlation plot
 dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
-ggsave(file.path('../plots',Sys.Date(),'rm_correlation_coefficients.svg'),rm_correlation_coefficients,device= svglite,units='in',dpi=600,width=3.75,height = 2.05)
+ggsave(file.path('../plots',Sys.Date(),'rm_correlation_coefficients.svg'),rm_correlation_coefficients,device= svglite,units='in',dpi=600,width=3.75,height = 2.25)
 
 
 ### IV. ICP24_lores vs. TIL24
@@ -428,7 +439,7 @@ long.formatted.TIL.means.maxes <- read.csv('../formatted_data/formatted_TIL_mean
   pivot_wider(names_from = TILmetric,values_from = value)
 
 long.prior.study.formatted.TIL.means.maxes <- read.csv('../formatted_data/prior_study_formatted_TIL_means_maxes.csv',
-                                                  na.strings = c("NA","NaN","", " ")) %>%
+                                                       na.strings = c("NA","NaN","", " ")) %>%
   mutate(TILmetric = factor(TILmetric,levels=c('TILmean','TILmax')),
          Group = 'PriorStudySet') %>%
   pivot_wider(names_from = TILmetric,values_from = value)
@@ -471,3 +482,72 @@ TIL.means.maxes.rhos <- compiled.TIL.means.maxes %>%
   group_by(Group) %>%
   summarize(cor=cor(TILmax, TILmean,method='spearman'),
             beta = lm(formula = 'TILmean ~ TILmax')$coefficients[2])
+
+### VI. Na24-ICP24 correlations per study population
+## Load and prepare formatted Na24-ICP24 dataframe
+# Load formatted Na24-ICP24 dataframe for low resolution data
+ICP24_Na24_lo_res.df <- inner_join(read.csv('../formatted_data/daily_correlations/lo_res_Na24_TIL24.csv',
+                                            na.strings = c("NA","NaN","", " ")),
+                                   read.csv('../formatted_data/daily_correlations/lo_res_ICP24_TIL24.csv',
+                                            na.strings = c("NA","NaN","", " "))) %>%
+  mutate(Group = 'ICPMR')
+
+# Load formatted Na24-ICP24 dataframe for high resolution data
+ICP24_Na24_hi_res.df <- inner_join(read.csv('../formatted_data/daily_correlations/hi_res_Na24_TIL24.csv',
+                                            na.strings = c("NA","NaN","", " ")),
+                                   read.csv('../formatted_data/daily_correlations/hi_res_ICP24_TIL24.csv',
+                                            na.strings = c("NA","NaN","", " "))) %>%
+  mutate(Group = 'ICPHR') %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_scores.csv',na.strings = c("NA","NaN","", " ")) %>%
+              select(GUPI,DateComponent,TILTimepoint) %>%
+              unique())
+
+# Compile both low- and high-resolution data
+ICP24_Na24.df <- rbind(ICP24_Na24_lo_res.df,ICP24_Na24_hi_res.df) %>%
+  mutate(Group = factor(Group,levels=c("ICPMR","ICPHR")))
+
+## Create and save TILmean-TILmax correlation plots
+ICP24.Na24.correlation.plots <- ICP24_Na24.df %>%
+  ggplot(aes(meanSodium, ICPmean)) +
+  geom_quasirandom(varwidth = TRUE,alpha = 1,stroke = 0,size=.5) +
+  geom_smooth(aes(color=Group),method = lm, se = TRUE) +
+  scale_color_manual(values=c('#003f5c','#bc5090'))+
+  coord_cartesian(xlim = c(128.4,165.1250),ylim = c(-4,40))+
+  scale_x_continuous(limits = c(128.4,165.1250))+
+  scale_y_continuous(limits = c(-4,40))+
+  facet_wrap(~Group,
+             nrow = 1,
+             scales = 'free') +
+  theme_minimal(base_family = 'Roboto Condensed') +
+  theme(aspect.ratio = 1,
+        panel.background = element_blank(),
+        panel.spacing = unit(0.05, "lines"),
+        panel.border = element_rect(colour = 'black', fill=NA, size = 1/.pt),
+        axis.text.x = element_text(size = 6, color = "black",margin = margin(r = 0)),
+        axis.text.y = element_text(size = 6, color = "black",margin = margin(r = 0)),
+        axis.title.x = element_text(size = 7, color = "black",face = 'bold'),
+        axis.title.y = element_text(size = 7, color = "black",face = 'bold'),
+        axis.line = element_blank(),
+        strip.text = element_text(size=7, color = "black",face = 'bold',margin = margin(b = .5)),
+        strip.background = element_blank(),
+        strip.placement = "outside",
+        legend.position = 'none')
+
+# Create directory for current date and save TILmean-TILmax correlation plots
+dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
+ggsave(file.path('../plots',Sys.Date(),'icp_24_na_24_correlations.svg'),ICP24.Na24.correlation.plots,device= svglite,units='in',dpi=600,width=5.08,height = 2.9)
+
+# Calculate correlations per group
+ICP24_Na24_lores.rmcorr = rmcorr(GUPI,TotalTIL,meanSodium,ICP24_Na24.df %>% filter(Group=='ICPMR'))
+ICP24_Na24_hires.rmcorr = rmcorr(GUPI,TotalTIL,meanSodium,ICP24_Na24.df %>% filter(Group=='ICPHR'))
+
+ICP24_Na24_lores.mixed = lmer(ICPmean ~ meanSodium + (1 | GUPI), data = ICP24_Na24.df %>% filter(Group=='ICPMR'))
+ICP24_Na24_hires.mixed = lmer(ICPmean ~ meanSodium + (1 | GUPI), data = ICP24_Na24.df %>% filter(Group=='ICPHR'))
+
+TIL.means.maxes.rhos <- compiled.TIL.means.maxes %>%
+  group_by(Group) %>%
+  summarize(cor=cor(TILmax, TILmean,method='spearman'),
+            beta = lm(formula = 'TILmean ~ TILmax')$coefficients[2])
+
+### Component plots
+formatted.TIL.max <- read.csv('../formatted_data/formatted_TIL_max.csv',na.strings = c("NA","NaN","", " "))

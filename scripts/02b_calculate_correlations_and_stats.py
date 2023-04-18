@@ -22,8 +22,10 @@ import itertools
 import numpy as np
 import pandas as pd
 import pickle as cp
+import pingouin as pg
 from tqdm import tqdm
 import seaborn as sns
+from scipy import stats
 from pathlib import Path
 from datetime import timedelta
 import matplotlib.pyplot as plt
@@ -36,7 +38,7 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
 # Custom methods
-from functions.analysis import spearman_rho, melm_R2
+from functions.analysis import spearman_rho, melm_R2, calculate_spearman_rhos, calculate_rmcorr, calc_melm, calc_ICP_Na_melm
 
 # Initialise directory for storing bootstrapping resamples
 bs_dir = '../bootstrapping_results/resamples'
@@ -49,469 +51,270 @@ os.makedirs(bs_results_dir,exist_ok=True)
 # Argument-induced bootstrapping functions
 def main(array_task_id):
 
-    ## Group 1: manually-recorded neuromonitoring population
-    # Create sub-directory for group 1
-    group1_dir = os.path.join(bs_dir,'group1')
+    ## Initalise variables of validation population sub-directories
+    # Designate sub-directory for TIL validation population
+    TIL_validation_dir = os.path.join(bs_dir,'TIL_validation')
 
-    # Load group 1 resamples
-    group1_bs_resamples = pd.read_pickle(os.path.join(group1_dir,'group1_resamples.pkl'))
+    # Designate sub-directory for TIL-ICP_EH validation population
+    TIL_ICPEH_dir = os.path.join(bs_dir,'TIL_ICPEH')
 
-    # Extract current group 1 resamples
-    curr_group1_resamples = group1_bs_resamples[group1_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
+    # Designate sub-directory for TIL-ICP_HR validation population
+    TIL_ICPHR_dir = os.path.join(bs_dir,'TIL_ICPHR')
+
+    ## Load bootstrapping resamples and select GUPIs of current resample_idx
+    # Load and extract TIL validation resamples
+    TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'TIL_validation_resamples.pkl'))
+    curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
+
+    # Load and extract TIL-ICP_EH validation resamples
+    TIL_ICPEH_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPEH_dir,'TIL_ICPEH_resamples.pkl'))
+    curr_TIL_ICPEH_resamples = TIL_ICPEH_bs_resamples[TIL_ICPEH_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
+
+    # Load and extract TIL-ICP_HR validation resamples
+    TIL_ICPHR_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPHR_dir,'TIL_ICPHR_resamples.pkl'))
+    curr_TIL_ICPHR_resamples = TIL_ICPHR_bs_resamples[TIL_ICPHR_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
+
+    ## Load and filter information dataframes
+    # Formatted scale scores
+    raw_formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+    raw_formatted_TIL_scores = raw_formatted_TIL_scores[raw_formatted_TIL_scores.TILTimepoint<=7].reset_index(drop=True)
+    raw_formatted_TIL_1987_scores = pd.read_csv('../formatted_data/formatted_TIL_1987_scores.csv')
+    raw_formatted_TIL_1987_scores = raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.TILTimepoint<=7].reset_index(drop=True)
+    raw_formatted_PILOT_scores = pd.read_csv('../formatted_data/formatted_PILOT_scores.csv')
+    raw_formatted_PILOT_scores = raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.TILTimepoint<=7].reset_index(drop=True)
+    raw_formatted_TIL_Basic_scores = pd.read_csv('../formatted_data/formatted_TIL_Basic_scores.csv')
+    raw_formatted_TIL_Basic_scores = raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.TILTimepoint<=7].reset_index(drop=True)
+    raw_formatted_uwTIL_scores = pd.read_csv('../formatted_data/formatted_unweighted_TIL_scores.csv')
+    raw_formatted_uwTIL_scores = raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.TILTimepoint<=7].reset_index(drop=True)
+    raw_formatted_uwTIL_scores['uwTILSum'] = raw_formatted_uwTIL_scores.CSFDrainage + raw_formatted_uwTIL_scores.DecomCraniectomy + raw_formatted_uwTIL_scores.FluidLoading + raw_formatted_uwTIL_scores.Hypertonic + raw_formatted_uwTIL_scores.ICPSurgery + raw_formatted_uwTIL_scores.Mannitol + raw_formatted_uwTIL_scores.Neuromuscular + raw_formatted_uwTIL_scores.Positioning + raw_formatted_uwTIL_scores.Sedation + raw_formatted_uwTIL_scores.Temperature + raw_formatted_uwTIL_scores.Vasopressor + raw_formatted_uwTIL_scores.Ventilation
+
+    # Create a pre-filtered dataframe of all scale sum scores
+    raw_all_total_scores = raw_formatted_uwTIL_scores[['GUPI','TILTimepoint','TILDate','TotalSum','uwTILSum']].merge(raw_formatted_TIL_1987_scores[['GUPI','TILTimepoint','TILDate','TIL_1987Sum']]).merge(raw_formatted_PILOT_scores[['GUPI','TILTimepoint','TILDate','PILOTSum']]).merge(raw_formatted_TIL_Basic_scores[['GUPI','TILTimepoint','TILDate','TIL_Basic']])
+
+    # Formatted scale maxes
+    raw_formatted_TIL_max = pd.read_csv('../formatted_data/formatted_TIL_max.csv')
+    raw_formatted_TIL_1987_max = pd.read_csv('../formatted_data/formatted_TIL_1987_max.csv')
+    raw_formatted_PILOT_max = pd.read_csv('../formatted_data/formatted_PILOT_max.csv')
+    raw_formatted_TIL_Basic_max = pd.read_csv('../formatted_data/formatted_TIL_Basic_max.csv')
+    raw_formatted_uwTIL_max = raw_formatted_uwTIL_scores.loc[raw_formatted_uwTIL_scores.groupby(['GUPI'])['uwTILSum'].idxmax()].reset_index(drop=True).rename(columns={'uwTILSum':'uwTILmax'})
+    raw_combined_max_scores = raw_formatted_TIL_max[['GUPI','TILmax']].merge(raw_formatted_TIL_1987_max[['GUPI','TIL_1987max']]).merge(raw_formatted_PILOT_max[['GUPI','PILOTmax']]).merge(raw_formatted_TIL_Basic_max[['GUPI','TIL_Basicmax']]).merge(raw_formatted_uwTIL_max[['GUPI','uwTILmax']])
+
+    # Formatted scale means
+    raw_formatted_TIL_mean = pd.read_csv('../formatted_data/formatted_TIL_mean.csv')
+    raw_formatted_TIL_1987_mean = pd.read_csv('../formatted_data/formatted_TIL_1987_mean.csv')
+    raw_formatted_PILOT_mean = pd.read_csv('../formatted_data/formatted_PILOT_mean.csv')
+    raw_formatted_TIL_Basic_mean = pd.read_csv('../formatted_data/formatted_TIL_Basic_mean.csv')
+    raw_formatted_uwTIL_mean = pd.pivot_table(raw_formatted_uwTIL_scores.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'uwTILSum':'uwTILmean'})
+    raw_combined_mean_scores = raw_formatted_TIL_mean[['GUPI','TILmean']].merge(raw_formatted_TIL_1987_mean[['GUPI','TIL_1987mean']]).merge(raw_formatted_PILOT_mean[['GUPI','PILOTmean']]).merge(raw_formatted_TIL_Basic_mean[['GUPI','TIL_Basicmean']]).merge(raw_formatted_uwTIL_mean[['GUPI','uwTILmean']])
+    raw_combined_mean_scores = raw_formatted_TIL_mean[['GUPI','TILmean']].merge(raw_formatted_TIL_1987_mean[['GUPI','TIL_1987mean']]).merge(raw_formatted_PILOT_mean[['GUPI','PILOTmean']]).merge(raw_formatted_TIL_Basic_mean[['GUPI','TIL_Basicmean']]).merge(raw_formatted_uwTIL_mean[['GUPI','uwTILmean']])
+
+    # Combine raw mean and max dataframes
+    raw_combined_max_mean_scores = raw_combined_max_scores.merge(raw_combined_mean_scores,how='inner')
+
+    # Formatted deltaTIL scores
+    formatted_delta_TIL_scores = pd.read_csv('../formatted_data/formatted_delta_TIL_scores.csv')
+    formatted_delta_TIL_scores = formatted_delta_TIL_scores[(formatted_delta_TIL_scores.GUPI.isin(curr_TIL_validation_resamples))&(formatted_delta_TIL_scores.TILTimepoint<=7)].reset_index(drop=True)
+    formatted_delta_TIL_scores = formatted_delta_TIL_scores.groupby(['GUPI','TILTimepoint','TILDate','TotalSum','ChangeInTIL'],as_index=False).HVTIL.aggregate({'meanChange':'mean','varChange':'var'})
+
+    # Demographic and outcome information
+    CENTER_TBI_demo_outcome = pd.read_csv('../formatted_data/formatted_outcome_and_demographics.csv')
+    CENTER_TBI_demo_outcome = CENTER_TBI_demo_outcome[CENTER_TBI_demo_outcome.GUPI.isin(curr_TIL_validation_resamples)].reset_index(drop=True)
+
+    # Formatted low-resolution values, means, and maxes 
+    formatted_low_resolution_values = pd.read_csv('../formatted_data/formatted_low_resolution_values.csv')
+    formatted_low_resolution_values = formatted_low_resolution_values[(formatted_low_resolution_values.GUPI.isin(curr_TIL_ICPEH_resamples))&(formatted_low_resolution_values.TILTimepoint<=7)].reset_index(drop=True)
+    formatted_low_resolution_maxes_means = pd.read_csv('../formatted_data/formatted_low_resolution_maxes_means.csv')
+    formatted_low_resolution_maxes_means = formatted_low_resolution_maxes_means[formatted_low_resolution_maxes_means.GUPI.isin(curr_TIL_ICPEH_resamples)].reset_index(drop=True)
+
+    # Formatted high-resolution values, means, and maxes 
+    formatted_high_resolution_values = pd.read_csv('../formatted_data/formatted_high_resolution_values.csv')
+    formatted_high_resolution_values = formatted_high_resolution_values[(formatted_high_resolution_values.GUPI.isin(curr_TIL_ICPHR_resamples))&(formatted_high_resolution_values.TILTimepoint<=7)].reset_index(drop=True)
+    formatted_high_resolution_maxes_means = pd.read_csv('../formatted_data/formatted_high_resolution_maxes_means.csv')
+    formatted_high_resolution_maxes_means = formatted_high_resolution_maxes_means[formatted_high_resolution_maxes_means.GUPI.isin(curr_TIL_ICPHR_resamples)].reset_index(drop=True)
+
+    # Formatted serum sodium concentration values, means, and maxes
+    raw_formatted_sodium_values = pd.read_csv('../formatted_data/formatted_daily_sodium_values.csv')
+    raw_formatted_sodium_values = raw_formatted_sodium_values[raw_formatted_sodium_values.TILTimepoint<=7].reset_index(drop=True)
+    formatted_sodium_maxes_means = pd.read_csv('../formatted_data/formatted_sodium_maxes_means.csv')
+    formatted_sodium_maxes_means = formatted_sodium_maxes_means[formatted_sodium_maxes_means.GUPI.isin(curr_TIL_validation_resamples)].reset_index(drop=True)
+
+    ## Calculate TILmean/TILmax correlations
+    # Combine TIL validation set global values
+    TIL_set_global_values = CENTER_TBI_demo_outcome[['GUPI','GCSScoreBaselineDerived','GOSE6monthEndpointDerived','RefractoryICP','MarshallCT','Pr(GOSE>1)','Pr(GOSE>3)','Pr(GOSE>4)','Pr(GOSE>5)','Pr(GOSE>6)','Pr(GOSE>7)']].merge(formatted_sodium_maxes_means,how='left')
+
+    # Calculate Spearman's rho within TILmean/max scores
+    within_TIL_spearmans = calculate_spearman_rhos(raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_validation_resamples)],'Spearman rho within TILmaxes/means')
+    within_TIL_spearmans['Population'] = 'TIL'
+
+    # Calculate Spearman's rho between TILmean/max scores and global values
+    TIL_global_spearmans = calculate_spearman_rhos(raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_validation_resamples)],TIL_set_global_values,'Spearman rho between TILmaxes/means and global values')
+    TIL_global_spearmans['Population'] = 'TIL'
+
+    # Calculate Spearman's rho between TILmean/max scores and lo-res global values
+    TIL_lo_res_spearmans = calculate_spearman_rhos(raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_maxes_means,'Spearman rho between TILmaxes/means and lo-res neuromonitoring')
+    TIL_lo_res_spearmans['Population'] = 'TIL-ICP_EH'
+
+    # Calculate Spearman's rho between TILmean/max scores and hi-res global values
+    TIL_hi_res_spearmans = calculate_spearman_rhos(raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_maxes_means,'Spearman rho between TILmaxes/means and hi-res neuromonitoring')
+    TIL_hi_res_spearmans['Population'] = 'TIL-ICP_HR'
+
+    # Concatenate Spearman's rho dataframes
+    compiled_spearmans_dataframe = pd.concat([within_TIL_spearmans,TIL_global_spearmans,TIL_lo_res_spearmans,TIL_hi_res_spearmans],ignore_index=True)
+    compiled_spearmans_dataframe['resample_idx'] = array_task_id+1
+
+    # Save concatenated dataframe
+    compiled_spearmans_dataframe.to_pickle(os.path.join(bs_results_dir,'compiled_spearman_rhos_resample_'+str(array_task_id+1).zfill(4)+'.pkl'))
+
+    ## Calculate TIL correlations
+    # Define vectors of particular columns columns
+    timestamp_columns = ['ICUAdmTimeStamp','ICUDischTimeStamp']
+    physician_impression_columns = ['TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP']
+
+    # Calculate correlations across TIL scores
+    across_TIL_rms = calculate_rmcorr(raw_all_total_scores[raw_all_total_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_all_total_scores[raw_all_total_scores.GUPI.isin(curr_TIL_validation_resamples)],'rmcorr across TIL')
+    across_TIL_rms['Population'] = 'TIL'
+    across_TIL_rms['Scale'] = 'All'
+
+    # Define physician impression columns
+    within_TIL_rms = calculate_rmcorr(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns),raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns),'rmcorr within TIL')
+    within_TIL_rms['Scale'] = 'TIL'
+    within_PILOT_rms = calculate_rmcorr(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),'rmcorr within PILOT')
+    within_PILOT_rms['Scale'] = 'PILOT'
+    within_TIL_1987_rms = calculate_rmcorr(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),'rmcorr within TIL_1987')
+    within_TIL_1987_rms['Scale'] = 'TIL_1987'
+    within_uwTIL_rms = calculate_rmcorr(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),'rmcorr within uwTIL')
+    within_uwTIL_rms['Scale'] = 'uwTIL'   
+    compiled_within_rms = pd.concat([within_TIL_rms,within_PILOT_rms,within_TIL_1987_rms,within_uwTIL_rms],ignore_index=True)
+    compiled_within_rms['Population'] = 'TIL'
+
+    # Calculate correlation between TIL scores and low-resolution neuromonitoring
+    TIL_lo_res_rms = calculate_rmcorr(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between TIL and ICP_EH')
+    TIL_lo_res_rms['Scale'] = 'TIL'
+    PILOT_lo_res_rms = calculate_rmcorr(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between PILOT and ICP_EH')
+    PILOT_lo_res_rms['Scale'] = 'PILOT'
+    TIL_1987_lo_res_rms = calculate_rmcorr(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between TIL_1987 and ICP_EH')
+    TIL_1987_lo_res_rms['Scale'] = 'TIL_1987'
+    uwTIL_lo_res_rms = calculate_rmcorr(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between uwTIL and ICP_EH')
+    uwTIL_lo_res_rms['Scale'] = 'uwTIL'
+    TIL_Basic_lo_res_rms = calculate_rmcorr(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr betweenTIL_Basic and ICP_EH')
+    TIL_Basic_lo_res_rms['Scale'] = 'TIL_Basic'
+    compiled_lo_res_rms = pd.concat([TIL_lo_res_rms,PILOT_lo_res_rms,TIL_1987_lo_res_rms,uwTIL_lo_res_rms,TIL_Basic_lo_res_rms],ignore_index=True)
+    compiled_lo_res_rms['Population'] = 'TIL-ICP_EH'
+
+    # Calculate correlation between TIL scores and high-resolution neuromonitoring
+    TIL_hi_res_rms = calculate_rmcorr(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between TIL and ICP_HR')
+    TIL_hi_res_rms['Scale'] = 'TIL'
+    PILOT_hi_res_rms = calculate_rmcorr(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between PILOT and ICP_HR')
+    PILOT_hi_res_rms['Scale'] = 'PILOT'
+    TIL_1987_hi_res_rms = calculate_rmcorr(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between TIL_1987 and ICP_HR')
+    TIL_1987_hi_res_rms['Scale'] = 'TIL_1987'
+    uwTIL_hi_res_rms = calculate_rmcorr(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between uwTIL and ICP_HR')
+    uwTIL_hi_res_rms['Scale'] = 'uwTIL'
+    TIL_Basic_hi_res_rms = calculate_rmcorr(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between TIL_Basic and ICP_HR')
+    TIL_Basic_hi_res_rms['Scale'] = 'TIL_Basic'
+    compiled_hi_res_rms = pd.concat([TIL_hi_res_rms,PILOT_hi_res_rms,TIL_1987_hi_res_rms,uwTIL_hi_res_rms,TIL_Basic_hi_res_rms],ignore_index=True)
+    compiled_hi_res_rms['Population'] = 'TIL-ICP_HR'
     
-    # Load current correlation dataframes
-    lo_res_ICP_TIL_means = pd.read_pickle(os.path.join(group1_dir,'lo_res_ICP_mean_TIL_mean.pkl'))
-    lo_res_ICP_TIL_maxes = pd.read_pickle(os.path.join(group1_dir,'lo_res_ICP_max_TIL_max.pkl'))
-    lo_res_CPP_TIL_means = pd.read_pickle(os.path.join(group1_dir,'lo_res_CPP_mean_TIL_mean.pkl'))
-    lo_res_CPP_TIL_maxes = pd.read_pickle(os.path.join(group1_dir,'lo_res_CPP_max_TIL_max.pkl'))
-    lo_res_ICP_TIL_24 = pd.read_pickle(os.path.join(group1_dir,'lo_res_ICP_24_TIL_24.pkl'))
-    lo_res_CPP_TIL_24 = pd.read_pickle(os.path.join(group1_dir,'lo_res_CPP_24_TIL_24.pkl'))
+    # Calculate correlation between TIL scores and serum sodium values
+    TIL_Na_rms = calculate_rmcorr(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between TIL and Na+')
+    TIL_Na_rms['Scale'] = 'TIL'
+    PILOT_Na_rms = calculate_rmcorr(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between PILOT and Na+')
+    PILOT_Na_rms['Scale'] = 'PILOT'
+    TIL_1987_Na_rms = calculate_rmcorr(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between TIL_1987 and Na+')
+    TIL_1987_Na_rms['Scale'] = 'TIL_1987'
+    uwTIL_Na_rms = calculate_rmcorr(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between uwTIL and Na+')
+    uwTIL_Na_rms['Scale'] = 'uwTIL'
+    TIL_Basic_Na_rms = calculate_rmcorr(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between TIL_Basic and Na+')
+    TIL_Basic_Na_rms['Scale'] = 'TIL_Basic'
+    compiled_Na_rms = pd.concat([TIL_Na_rms,PILOT_Na_rms,TIL_1987_Na_rms,uwTIL_Na_rms,TIL_Basic_Na_rms],ignore_index=True)
+    compiled_Na_rms['Population'] = 'TIL'
 
-    # Filter current correlation dataframes
-    lo_res_ICP_TIL_means = lo_res_ICP_TIL_means[lo_res_ICP_TIL_means.GUPI.isin(curr_group1_resamples)].reset_index(drop=True)
-    lo_res_ICP_TIL_maxes = lo_res_ICP_TIL_maxes[lo_res_ICP_TIL_maxes.GUPI.isin(curr_group1_resamples)].reset_index(drop=True)
-    lo_res_CPP_TIL_means = lo_res_CPP_TIL_means[lo_res_CPP_TIL_means.GUPI.isin(curr_group1_resamples)].reset_index(drop=True)
-    lo_res_CPP_TIL_maxes = lo_res_CPP_TIL_maxes[lo_res_CPP_TIL_maxes.GUPI.isin(curr_group1_resamples)].reset_index(drop=True)
-    lo_res_ICP_TIL_24 = lo_res_ICP_TIL_24[lo_res_ICP_TIL_24.GUPI.isin(curr_group1_resamples)].reset_index(drop=True)
-    lo_res_CPP_TIL_24 = lo_res_CPP_TIL_24[lo_res_CPP_TIL_24.GUPI.isin(curr_group1_resamples)].reset_index(drop=True)
+    # Calculate correlation between ICP/CPP and serum sodium values
+    Na_lo_res_rms = calculate_rmcorr(raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_ICPEH_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between Na+ and ICP_EH')
+    Na_lo_res_rms['Population'] = 'TIL-ICP_EH'
+    Na_hi_res_rms = calculate_rmcorr(raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_ICPHR_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between Na+ and ICP_HR')
+    Na_hi_res_rms['Population'] = 'TIL-ICP_HR'
+    compiled_Na_res_rms = pd.concat([Na_lo_res_rms,Na_hi_res_rms],ignore_index=True)
+    compiled_Na_res_rms['Scale'] = 'All'
 
-    # Calculate Spearman Rho correlation of independent measures
-    group1_rhos = [spearmanr(lo_res_ICP_TIL_means.ICPmean,lo_res_ICP_TIL_means.TILmean).statistic,
-     spearmanr(lo_res_ICP_TIL_maxes.ICPmax,lo_res_ICP_TIL_maxes.TILmax).statistic,
-     spearmanr(lo_res_CPP_TIL_means.CPPmean,lo_res_CPP_TIL_means.TILmean).statistic,
-     spearmanr(lo_res_CPP_TIL_maxes.CPPmax,lo_res_CPP_TIL_maxes.TILmax).statistic]
-    group1_p_vals = [spearmanr(lo_res_ICP_TIL_means.ICPmean,lo_res_ICP_TIL_means.TILmean).pvalue,
-     spearmanr(lo_res_ICP_TIL_maxes.ICPmax,lo_res_ICP_TIL_maxes.TILmax).pvalue,
-     spearmanr(lo_res_CPP_TIL_means.CPPmean,lo_res_CPP_TIL_means.TILmean).pvalue,
-     spearmanr(lo_res_CPP_TIL_maxes.CPPmax,lo_res_CPP_TIL_maxes.TILmax).pvalue]
-    group1_firsts = ['TILmean','TILmax','TILmean','TILmax']
-    group1_seconds = ['ICPmean','ICPmax','CPPmean','CPPmax']
+    # Calculate correlation between TIL and deltaTIL
+    deltaTIL_rms = calculate_rmcorr(formatted_delta_TIL_scores,formatted_delta_TIL_scores,'rmcorr between TIL and deltaTIL')
+    deltaTIL_rms['Scale'] = 'TIL'
+    deltaTIL_rms['Population'] = 'TIL'
 
-    # Construct dataframe of Spearman Rho correlations
-    group1_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'LowResolution','first':group1_firsts,'second':group1_seconds,'rho':group1_rhos,'pval':group1_p_vals})
+    ## Concatenate all the repeated-measures correlation results and save
+    # Concatenate
+    compiled_rms_df = pd.concat([across_TIL_rms,compiled_within_rms,compiled_lo_res_rms,compiled_hi_res_rms,compiled_Na_rms,compiled_Na_res_rms,deltaTIL_rms],ignore_index=True)
+    compiled_rms_df['resample_idx'] = array_task_id+1
 
-    # Calculate mixed-effect model coefficients of dependent measures
-    lo_res_mlm_ICP_TIL_24 = smf.mixedlm("ICPmean ~ TotalTIL", lo_res_ICP_TIL_24, groups=lo_res_ICP_TIL_24["GUPI"])
-    lo_res_mlmf_ICP_TIL_24 = lo_res_mlm_ICP_TIL_24.fit()
-    lo_res_mlm_CPP_TIL_24 = smf.mixedlm("CPPmean ~ TotalTIL", lo_res_CPP_TIL_24, groups=lo_res_CPP_TIL_24["GUPI"])
-    lo_res_mlmf_CPP_TIL_24 = lo_res_mlm_CPP_TIL_24.fit()
+    # Save concatenated dataframe
+    compiled_rms_df.to_pickle(os.path.join(bs_results_dir,'compiled_rmcorr_resample_'+str(array_task_id+1).zfill(4)+'.pkl'))
 
-    ## Group 2: high-resolution neuromonitoring population
-    # Create sub-directory for group 2
-    group2_dir = os.path.join(bs_dir,'group2')
+    ## Mixed-effects regression
+    # Define component columns for each scale
+    TIL_components = ['CSFDrainage', 'DecomCraniectomy','FluidLoading', 'Hypertonic', 'ICPSurgery', 'Mannitol', 'Neuromuscular','Positioning', 'Sedation', 'Temperature','Vasopressor','Ventilation']
+    PILOT_components = ['Temperature', 'Sedation', 'Neuromuscular', 'Ventilation', 'Mannitol','Hypertonic', 'CSFDrainage', 'ICPSurgery', 'DecomCraniectomy','Vasopressor']
+    TIL_1987_components = ['Sedation', 'Mannitol', 'Ventricular', 'Hyperventilation', 'Paralysis']
 
-    # Load group 2 resamples
-    group2_bs_resamples = pd.read_pickle(os.path.join(group2_dir,'group2_resamples.pkl'))
+    # Calculate low-resolution mixed effect models
+    TIL_lo_res_mlm = calc_melm(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TotalSum',False,TIL_components,'Calculating ICP_EH ~ TIL')
+    TIL_lo_res_mlm['Scale'] = 'TIL'
+    PILOT_lo_res_mlm = calc_melm(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'PILOTSum',False,PILOT_components,'Calculating ICP_EH ~ PILOT')
+    PILOT_lo_res_mlm['Scale'] = 'PILOT'
+    TIL_1987_lo_res_mlm = calc_melm(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TIL_1987Sum',False,TIL_1987_components,'Calculating ICP_EH ~ TIL_1987')
+    TIL_1987_lo_res_mlm['Scale'] = 'TIL_1987'
+    TIL_Basic_lo_res_mlm = calc_melm(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TIL_Basic',False,[],'Calculating ICP_EH ~ TIL_Basic')
+    TIL_Basic_lo_res_mlm['Scale'] = 'TIL_Basic'
+    uwTIL_lo_res_mlm = calc_melm(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'uwTILSum',True,TIL_components,'Calculating ICP_EH ~ uwTIL')
+    uwTIL_lo_res_mlm['Scale'] = 'uwTIL'
+    compiled_lo_res_mlm = pd.concat([TIL_lo_res_mlm,PILOT_lo_res_mlm,TIL_1987_lo_res_mlm,TIL_Basic_lo_res_mlm,uwTIL_lo_res_mlm],ignore_index=True)
+    compiled_lo_res_mlm['Population'] = 'TIL-ICP_EH'
+                 
+    # Calculate high-resolution mixed effect models
+    TIL_hi_res_mlm = calc_melm(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'TotalSum',False,TIL_components,'Calculating ICP_HR ~ TIL')
+    TIL_hi_res_mlm['Scale'] = 'TIL'
+    PILOT_hi_res_mlm = calc_melm(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'PILOTSum',False,PILOT_components,'Calculating ICP_HR ~ PILOT')
+    PILOT_hi_res_mlm['Scale'] = 'PILOT'
+    TIL_1987_hi_res_mlm = calc_melm(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'TIL_1987Sum',False,TIL_1987_components,'Calculating ICP_HR ~ TIL_1987')
+    TIL_1987_hi_res_mlm['Scale'] = 'TIL_1987'
+    TIL_Basic_hi_res_mlm = calc_melm(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'TIL_Basic',False,[],'Calculating ICP_HR ~ TIL_Basic')
+    TIL_Basic_hi_res_mlm['Scale'] = 'TIL_Basic'
+    uwTIL_hi_res_mlm = calc_melm(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'uwTILSum',True,TIL_components,'Calculating ICP_HR ~ uwTIL')
+    uwTIL_hi_res_mlm['Scale'] = 'uwTIL'
+    compiled_hi_res_mlm = pd.concat([TIL_hi_res_mlm,PILOT_hi_res_mlm,TIL_1987_hi_res_mlm,TIL_Basic_hi_res_mlm,uwTIL_hi_res_mlm],ignore_index=True)
+    compiled_hi_res_mlm['Population'] = 'TIL-ICP_HR'
 
-    # Extract current group 2 resamples
-    curr_group2_resamples = group2_bs_resamples[group2_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-    
-    # Load current correlation dataframes
-    hi_res_ICP_TIL_means = pd.read_pickle(os.path.join(group2_dir,'hi_res_ICP_mean_TIL_mean.pkl'))
-    hi_res_ICP_TIL_maxes = pd.read_pickle(os.path.join(group2_dir,'hi_res_ICP_max_TIL_max.pkl'))
-    hi_res_CPP_TIL_means = pd.read_pickle(os.path.join(group2_dir,'hi_res_CPP_mean_TIL_mean.pkl'))
-    hi_res_CPP_TIL_maxes = pd.read_pickle(os.path.join(group2_dir,'hi_res_CPP_max_TIL_max.pkl'))
-    hi_res_ICP_TIL_24 = pd.read_pickle(os.path.join(group2_dir,'hi_res_ICP_24_TIL_24.pkl'))
-    hi_res_CPP_TIL_24 = pd.read_pickle(os.path.join(group2_dir,'hi_res_CPP_24_TIL_24.pkl'))
+    # Calculate sodium mixed effect models
+    TIL_Na_mlm = calc_melm(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'TotalSum',False,TIL_components,'Calculating Na+ ~ TIL')
+    TIL_Na_mlm['Scale'] = 'TIL'
+    PILOT_Na_mlm = calc_melm(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'PILOTSum',False,PILOT_components,'Calculating Na+ ~ PILOT')
+    PILOT_Na_mlm['Scale'] = 'PILOT'
+    TIL_1987_Na_mlm = calc_melm(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'TIL_1987Sum',False,TIL_1987_components,'Calculating Na+ ~ TIL_1987')
+    TIL_1987_Na_mlm['Scale'] = 'TIL_1987'
+    TIL_Basic_Na_mlm = calc_melm(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'TIL_Basic',False,[],'Calculating Na+ ~ TIL_Basic')
+    TIL_Basic_Na_mlm['Scale'] = 'TIL_Basic'
+    uwTIL_Na_mlm = calc_melm(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'uwTILSum',True,TIL_components,'Calculating Na+ ~ uwTIL')
+    uwTIL_Na_mlm['Scale'] = 'uwTIL'
+    compiled_Na_mlm = pd.concat([TIL_Na_mlm,PILOT_Na_mlm,TIL_1987_Na_mlm,TIL_Basic_Na_mlm,uwTIL_Na_mlm],ignore_index=True)
+    compiled_Na_mlm['Population'] = 'TIL'
 
-    # Filter current correlation dataframes
-    hi_res_ICP_TIL_means = hi_res_ICP_TIL_means[hi_res_ICP_TIL_means.GUPI.isin(curr_group2_resamples)].reset_index(drop=True)
-    hi_res_ICP_TIL_maxes = hi_res_ICP_TIL_maxes[hi_res_ICP_TIL_maxes.GUPI.isin(curr_group2_resamples)].reset_index(drop=True)
-    hi_res_CPP_TIL_means = hi_res_CPP_TIL_means[hi_res_CPP_TIL_means.GUPI.isin(curr_group2_resamples)].reset_index(drop=True)
-    hi_res_CPP_TIL_maxes = hi_res_CPP_TIL_maxes[hi_res_CPP_TIL_maxes.GUPI.isin(curr_group2_resamples)].reset_index(drop=True)
-    hi_res_ICP_TIL_24 = hi_res_ICP_TIL_24[hi_res_ICP_TIL_24.GUPI.isin(curr_group2_resamples)].reset_index(drop=True)
-    hi_res_CPP_TIL_24 = hi_res_CPP_TIL_24[hi_res_CPP_TIL_24.GUPI.isin(curr_group2_resamples)].reset_index(drop=True)
+    # Calculate bespoke TIL ~ Na + ICP mixed effect models
+    TIL_lo_res_Na_df = raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_ICPEH_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']].merge(formatted_low_resolution_values.drop(columns=['nCPP','nICP','CPPmean']))
+    TIL_lo_res_Na_mlm = calc_ICP_Na_melm(TIL_lo_res_Na_df,'TotalSum')
+    TIL_lo_res_Na_mlm['Scale'] = 'TIL'
+    TIL_lo_res_Na_mlm['Population'] = 'TIL-ICP_EH'
+    TIL_hi_res_Na_df = raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_ICPHR_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']].merge(formatted_high_resolution_values.drop(columns=['nCPP','nICP','CPPmean','EVD']))
+    TIL_hi_res_Na_mlm = calc_ICP_Na_melm(TIL_hi_res_Na_df,'TotalSum')
+    TIL_hi_res_Na_mlm['Scale'] = 'TIL'
+    TIL_hi_res_Na_mlm['Population'] = 'TIL-ICP_HR'
+    TIL_ICP_Na_mlm = pd.concat([TIL_lo_res_Na_mlm,TIL_hi_res_Na_mlm],ignore_index=True)
 
-    # Calculate Spearman Rho correlation of independent measures
-    group2_rhos = [spearmanr(hi_res_ICP_TIL_means.ICPmean,hi_res_ICP_TIL_means.TILmean).statistic,
-     spearmanr(hi_res_ICP_TIL_maxes.ICPmax,hi_res_ICP_TIL_maxes.TILmax).statistic,
-     spearmanr(hi_res_CPP_TIL_means.CPPmean,hi_res_CPP_TIL_means.TILmean).statistic,
-     spearmanr(hi_res_CPP_TIL_maxes.CPPmax,hi_res_CPP_TIL_maxes.TILmax).statistic]
-    group2_p_vals = [spearmanr(hi_res_ICP_TIL_means.ICPmean,hi_res_ICP_TIL_means.TILmean).pvalue,
-     spearmanr(hi_res_ICP_TIL_maxes.ICPmax,hi_res_ICP_TIL_maxes.TILmax).pvalue,
-     spearmanr(hi_res_CPP_TIL_means.CPPmean,hi_res_CPP_TIL_means.TILmean).pvalue,
-     spearmanr(hi_res_CPP_TIL_maxes.CPPmax,hi_res_CPP_TIL_maxes.TILmax).pvalue]
-    group2_firsts = ['TILmean','TILmax','TILmean','TILmax']
-    group2_seconds = ['ICPmean','ICPmax','CPPmean','CPPmax']
+    # Concatenate all mlm model information
+    compiled_mlm_df = pd.concat([compiled_lo_res_mlm,compiled_hi_res_mlm,compiled_Na_mlm,TIL_ICP_Na_mlm],ignore_index=True)
+    compiled_mlm_df['resample_idx'] = array_task_id+1
 
-    # Construct dataframe of Spearman Rho correlations
-    group2_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'HighResolution','first':group2_firsts,'second':group2_seconds,'rho':group2_rhos,'pval':group2_p_vals})
-
-    # Calculate mixed-effect model coefficients of dependent measures
-    hi_res_mlm_ICP_TIL_24 = smf.mixedlm("ICPmean ~ TotalTIL", hi_res_ICP_TIL_24, groups=hi_res_ICP_TIL_24["GUPI"])
-    hi_res_mlmf_ICP_TIL_24 = hi_res_mlm_ICP_TIL_24.fit()
-    hi_res_mlm_CPP_TIL_24 = smf.mixedlm("CPPmean ~ TotalTIL", hi_res_CPP_TIL_24, groups=hi_res_CPP_TIL_24["GUPI"])
-    hi_res_mlmf_CPP_TIL_24 = hi_res_mlm_CPP_TIL_24.fit()
-
-    ## Group 3: Prior study population
-    # Create sub-directory for group 3
-    group3_dir = os.path.join(bs_dir,'group3')
-
-    # Load group 3 resamples
-    group3_bs_resamples = pd.read_pickle(os.path.join(group3_dir,'group3_resamples.pkl'))
-
-    # Extract current group 3 resamples
-    curr_group3_resamples = group3_bs_resamples[group3_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
-    # Load current correlation dataframes
-    prior_study_ICP_TIL_means = pd.read_pickle(os.path.join(group3_dir,'prior_study_ICP_mean_TIL_mean.pkl'))
-    prior_study_ICP_TIL_maxes = pd.read_pickle(os.path.join(group3_dir,'prior_study_ICP_max_TIL_max.pkl'))
-    prior_study_CPP_TIL_means = pd.read_pickle(os.path.join(group3_dir,'prior_study_CPP_mean_TIL_mean.pkl'))
-    prior_study_CPP_TIL_maxes = pd.read_pickle(os.path.join(group3_dir,'prior_study_CPP_max_TIL_max.pkl'))
-    prior_study_GCS_TIL_means = pd.read_pickle(os.path.join(group3_dir,'prior_study_GCS_TIL_mean.pkl'))
-    prior_study_GCS_TIL_maxes = pd.read_pickle(os.path.join(group3_dir,'prior_study_GCS_TIL_max.pkl'))
-    prior_study_GOS_TIL_means = pd.read_pickle(os.path.join(group3_dir,'prior_study_GOS_TIL_mean.pkl'))
-    prior_study_GOS_TIL_maxes = pd.read_pickle(os.path.join(group3_dir,'prior_study_GOS_TIL_max.pkl'))
-    prior_study_ICP_TIL_24 = pd.read_pickle(os.path.join(group3_dir,'prior_study_ICP_24_TIL_24.pkl'))
-    prior_study_CPP_TIL_24 = pd.read_pickle(os.path.join(group3_dir,'prior_study_CPP_24_TIL_24.pkl'))
-
-    # Filter current correlation dataframes
-    prior_study_ICP_TIL_means = prior_study_ICP_TIL_means[prior_study_ICP_TIL_means.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_ICP_TIL_maxes = prior_study_ICP_TIL_maxes[prior_study_ICP_TIL_maxes.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_CPP_TIL_means = prior_study_CPP_TIL_means[prior_study_CPP_TIL_means.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_CPP_TIL_maxes = prior_study_CPP_TIL_maxes[prior_study_CPP_TIL_maxes.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_GCS_TIL_means = prior_study_GCS_TIL_means[prior_study_GCS_TIL_means.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_GCS_TIL_maxes = prior_study_GCS_TIL_maxes[prior_study_GCS_TIL_maxes.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_GOS_TIL_means = prior_study_GOS_TIL_means[prior_study_GOS_TIL_means.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_GOS_TIL_maxes = prior_study_GOS_TIL_maxes[prior_study_GOS_TIL_maxes.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_ICP_TIL_24 = prior_study_ICP_TIL_24[prior_study_ICP_TIL_24.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-    prior_study_CPP_TIL_24 = prior_study_CPP_TIL_24[prior_study_CPP_TIL_24.GUPI.isin(curr_group3_resamples)].reset_index(drop=True)
-
-    # Calculate Spearman Rho correlation of independent measures
-    group3_rhos = [spearmanr(prior_study_ICP_TIL_means.ICPmean,prior_study_ICP_TIL_means.TILmean).statistic,
-     spearmanr(prior_study_ICP_TIL_maxes.ICPmax,prior_study_ICP_TIL_maxes.TILmax).statistic,
-     spearmanr(prior_study_CPP_TIL_means.CPPmean,prior_study_CPP_TIL_means.TILmean).statistic,
-     spearmanr(prior_study_CPP_TIL_maxes.CPPmax,prior_study_CPP_TIL_maxes.TILmax).statistic,
-     spearmanr(prior_study_GCS_TIL_means.GCSScoreBaselineDerived,prior_study_GCS_TIL_means.TILmean).statistic,
-     spearmanr(prior_study_GCS_TIL_maxes.GCSScoreBaselineDerived,prior_study_GCS_TIL_maxes.TILmax).statistic,
-     spearmanr(prior_study_GOS_TIL_means.GOS6monthEndpointDerived,prior_study_GOS_TIL_means.TILmean).statistic,
-     spearmanr(prior_study_GOS_TIL_maxes.GOS6monthEndpointDerived,prior_study_GOS_TIL_maxes.TILmax).statistic]
-    group3_p_vals = [spearmanr(prior_study_ICP_TIL_means.ICPmean,prior_study_ICP_TIL_means.TILmean).pvalue,
-     spearmanr(prior_study_ICP_TIL_maxes.ICPmax,prior_study_ICP_TIL_maxes.TILmax).pvalue,
-     spearmanr(prior_study_CPP_TIL_means.CPPmean,prior_study_CPP_TIL_means.TILmean).pvalue,
-     spearmanr(prior_study_CPP_TIL_maxes.CPPmax,prior_study_CPP_TIL_maxes.TILmax).pvalue,
-     spearmanr(prior_study_GCS_TIL_means.GCSScoreBaselineDerived,prior_study_GCS_TIL_means.TILmean).pvalue,
-     spearmanr(prior_study_GCS_TIL_maxes.GCSScoreBaselineDerived,prior_study_GCS_TIL_maxes.TILmax).pvalue,
-     spearmanr(prior_study_GOS_TIL_means.GOS6monthEndpointDerived,prior_study_GOS_TIL_means.TILmean).pvalue,
-     spearmanr(prior_study_GOS_TIL_maxes.GOS6monthEndpointDerived,prior_study_GOS_TIL_maxes.TILmax).pvalue]
-    group3_firsts = ['TILmean','TILmax','TILmean','TILmax','TILmean','TILmax','TILmean','TILmax']
-    group3_seconds = ['ICPmean','ICPmax','CPPmean','CPPmax','GCS','GCS','GOS','GOS']
-
-    # Construct dataframe of Spearman Rho correlations
-    group3_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'PriorStudy','first':group3_firsts,'second':group3_seconds,'rho':group3_rhos,'pval':group3_p_vals})
-
-    # Calculate mixed-effect model coefficients of dependent measures
-    prior_study_ICP_TIL_24 = prior_study_ICP_TIL_24.dropna().reset_index(drop=True)
-    prior_study_CPP_TIL_24 = prior_study_CPP_TIL_24.dropna().reset_index(drop=True)
-    prior_study_mlm_ICP_TIL_24 = smf.mixedlm("ICPmean ~ TotalTIL", prior_study_ICP_TIL_24, groups=prior_study_ICP_TIL_24["GUPI"])
-    prior_study_mlmf_ICP_TIL_24 = prior_study_mlm_ICP_TIL_24.fit()
-    prior_study_mlm_CPP_TIL_24 = smf.mixedlm("CPPmean ~ TotalTIL", prior_study_CPP_TIL_24, groups=prior_study_CPP_TIL_24["GUPI"])
-    prior_study_mlmf_CPP_TIL_24 = prior_study_mlm_CPP_TIL_24.fit()
-
-    ## Group 4: Manually recorded neuromonitoring + sodium population
-    # Create sub-directory for group 4
-    group4_dir = os.path.join(bs_dir,'group4')
-
-    # Load group 4 resamples
-    group4_bs_resamples = pd.read_pickle(os.path.join(group4_dir,'group4_resamples.pkl'))
-
-    # Extract current group 4 resamples
-    curr_group4_resamples = group4_bs_resamples[group4_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
-    # Load current correlation dataframes
-    lo_res_Sodium_TIL_means = pd.read_pickle(os.path.join(group4_dir,'lo_res_sodium_mean_TIL_mean.pkl'))
-    lo_res_Sodium_TIL_maxes = pd.read_pickle(os.path.join(group4_dir,'lo_res_sodium_max_TIL_max.pkl'))
-    lo_res_Sodium_TIL_24 = pd.read_pickle(os.path.join(group4_dir,'lo_res_sodium_24_TIL_24.pkl'))
-
-    # Filter current correlation dataframes
-    lo_res_Sodium_TIL_means = lo_res_Sodium_TIL_means[lo_res_Sodium_TIL_means.GUPI.isin(curr_group4_resamples)].reset_index(drop=True)
-    lo_res_Sodium_TIL_maxes = lo_res_Sodium_TIL_maxes[lo_res_Sodium_TIL_maxes.GUPI.isin(curr_group4_resamples)].reset_index(drop=True)
-    lo_res_Sodium_TIL_24 = lo_res_Sodium_TIL_24[lo_res_Sodium_TIL_24.GUPI.isin(curr_group4_resamples)].reset_index(drop=True)
-
-    # Calculate Spearman Rho correlation of independent measures
-    group4_rhos = [spearmanr(lo_res_Sodium_TIL_means.meanSodium,lo_res_Sodium_TIL_means.TILmean).statistic,
-     spearmanr(lo_res_Sodium_TIL_maxes.maxSodium,lo_res_Sodium_TIL_maxes.TILmax).statistic]
-    group4_p_vals = [spearmanr(lo_res_Sodium_TIL_means.meanSodium,lo_res_Sodium_TIL_means.TILmean).pvalue,
-     spearmanr(lo_res_Sodium_TIL_maxes.maxSodium,lo_res_Sodium_TIL_maxes.TILmax).pvalue]
-    group4_firsts = ['TILmean','TILmax']
-    group4_seconds = ['NAmean','NAmax']
-
-    # Construct dataframe of Spearman Rho correlations
-    group4_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'LowResolution','first':group4_firsts,'second':group4_seconds,'rho':group4_rhos,'pval':group4_p_vals})
-
-    # Calculate mixed-effect model coefficients of dependent measures
-    lo_res_mlm_Sodium_TIL_24 = smf.mixedlm("meanSodium ~ TotalTIL", lo_res_Sodium_TIL_24, groups=lo_res_Sodium_TIL_24["GUPI"])
-    lo_res_mlmf_Sodium_TIL_24 = lo_res_mlm_Sodium_TIL_24.fit()
-
-    ## Group 5: High-resolution neuromonitoring + sodium population
-    # Create sub-directory for group 5
-    group5_dir = os.path.join(bs_dir,'group5')
-
-    # Load group 5 resamples
-    group5_bs_resamples = pd.read_pickle(os.path.join(group5_dir,'group5_resamples.pkl'))
-
-    # Extract current group 5 resamples
-    curr_group5_resamples = group5_bs_resamples[group5_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
-    # Load current correlation dataframes
-    hi_res_Sodium_TIL_means = pd.read_pickle(os.path.join(group5_dir,'hi_res_sodium_mean_TIL_mean.pkl'))
-    hi_res_Sodium_TIL_maxes = pd.read_pickle(os.path.join(group5_dir,'hi_res_sodium_max_TIL_max.pkl'))
-    hi_res_Sodium_TIL_24 = pd.read_pickle(os.path.join(group5_dir,'hi_res_sodium_24_TIL_24.pkl'))
-
-    # Filter current correlation dataframes
-    hi_res_Sodium_TIL_means = hi_res_Sodium_TIL_means[hi_res_Sodium_TIL_means.GUPI.isin(curr_group5_resamples)].reset_index(drop=True)
-    hi_res_Sodium_TIL_maxes = hi_res_Sodium_TIL_maxes[hi_res_Sodium_TIL_maxes.GUPI.isin(curr_group5_resamples)].reset_index(drop=True)
-    hi_res_Sodium_TIL_24 = hi_res_Sodium_TIL_24[hi_res_Sodium_TIL_24.GUPI.isin(curr_group5_resamples)].reset_index(drop=True)
-
-    # Calculate Spearman Rho correlation of independent measures
-    group5_rhos = [spearmanr(hi_res_Sodium_TIL_means.meanSodium,hi_res_Sodium_TIL_means.TILmean).statistic,
-     spearmanr(hi_res_Sodium_TIL_maxes.maxSodium,hi_res_Sodium_TIL_maxes.TILmax).statistic]
-    group5_p_vals = [spearmanr(hi_res_Sodium_TIL_means.meanSodium,hi_res_Sodium_TIL_means.TILmean).pvalue,
-     spearmanr(hi_res_Sodium_TIL_maxes.maxSodium,hi_res_Sodium_TIL_maxes.TILmax).pvalue]
-    group5_firsts = ['TILmean','TILmax']
-    group5_seconds = ['NAmean','NAmax']
-
-    # Construct dataframe of Spearman Rho correlations
-    group5_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'HighResolution','first':group5_firsts,'second':group5_seconds,'rho':group5_rhos,'pval':group5_p_vals})
-    
-    # Calculate mixed-effect model coefficients of dependent measures
-    hi_res_mlm_Sodium_TIL_24 = smf.mixedlm("meanSodium ~ TotalTIL", hi_res_Sodium_TIL_24, groups=hi_res_Sodium_TIL_24["GUPI"])
-    hi_res_mlmf_Sodium_TIL_24 = hi_res_mlm_Sodium_TIL_24.fit()
-
-    ## Group 6: Manually-recorded neuromonitoring + GCS population
-    # Create sub-directory for group 6
-    group6_dir = os.path.join(bs_dir,'group6')
-
-    # Load group 6 resamples
-    group6_bs_resamples = pd.read_pickle(os.path.join(group6_dir,'group6_resamples.pkl'))
-
-    # Extract current group 6 resamples
-    curr_group6_resamples = group6_bs_resamples[group6_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
-    # Load current correlation dataframes
-    lo_res_GCS_TIL_means = pd.read_pickle(os.path.join(group6_dir,'lo_res_GCS_TIL_mean.pkl'))
-    lo_res_GCS_TIL_maxes = pd.read_pickle(os.path.join(group6_dir,'lo_res_GCS_TIL_max.pkl'))
-    
-    # Filter current correlation dataframes
-    lo_res_GCS_TIL_means = lo_res_GCS_TIL_means[lo_res_GCS_TIL_means.GUPI.isin(curr_group6_resamples)].reset_index(drop=True)
-    lo_res_GCS_TIL_maxes = lo_res_GCS_TIL_maxes[lo_res_GCS_TIL_maxes.GUPI.isin(curr_group6_resamples)].reset_index(drop=True)
-
-    # Calculate Spearman Rho correlation of independent measures
-    group6_rhos = [spearmanr(lo_res_GCS_TIL_means.GCSScoreBaselineDerived,lo_res_GCS_TIL_means.TILmean).statistic,
-     spearmanr(lo_res_GCS_TIL_maxes.GCSScoreBaselineDerived,lo_res_GCS_TIL_maxes.TILmax).statistic]
-    group6_p_vals = [spearmanr(lo_res_GCS_TIL_means.GCSScoreBaselineDerived,lo_res_GCS_TIL_means.TILmean).pvalue,
-     spearmanr(lo_res_GCS_TIL_maxes.GCSScoreBaselineDerived,lo_res_GCS_TIL_maxes.TILmax).pvalue]
-    group6_firsts = ['TILmean','TILmax']
-    group6_seconds = ['GCS','GCS']
-
-    # Construct dataframe of Spearman Rho correlations
-    group6_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'LowResolution','first':group6_firsts,'second':group6_seconds,'rho':group6_rhos,'pval':group6_p_vals})
-
-    ## Group 7: high-resolution neuromonitoring + GCS population
-    # Create sub-directory for group 7
-    group7_dir = os.path.join(bs_dir,'group7')
-
-    # Load group 7 resamples
-    group7_bs_resamples = pd.read_pickle(os.path.join(group7_dir,'group7_resamples.pkl'))
-
-    # Extract current group 7 resamples
-    curr_group7_resamples = group7_bs_resamples[group7_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
-    # Load current correlation dataframes
-    hi_res_GCS_TIL_means = pd.read_pickle(os.path.join(group7_dir,'hi_res_GCS_TIL_mean.pkl'))
-    hi_res_GCS_TIL_maxes = pd.read_pickle(os.path.join(group7_dir,'hi_res_GCS_TIL_max.pkl'))
-    
-    # Filter current correlation dataframes
-    hi_res_GCS_TIL_means = hi_res_GCS_TIL_means[hi_res_GCS_TIL_means.GUPI.isin(curr_group7_resamples)].reset_index(drop=True)
-    hi_res_GCS_TIL_maxes = hi_res_GCS_TIL_maxes[hi_res_GCS_TIL_maxes.GUPI.isin(curr_group7_resamples)].reset_index(drop=True)
-
-    # Calculate Spearman Rho correlation of independent measures
-    group7_rhos = [spearmanr(hi_res_GCS_TIL_means.GCSScoreBaselineDerived,hi_res_GCS_TIL_means.TILmean).statistic,
-     spearmanr(hi_res_GCS_TIL_maxes.GCSScoreBaselineDerived,hi_res_GCS_TIL_maxes.TILmax).statistic]
-    group7_p_vals = [spearmanr(hi_res_GCS_TIL_means.GCSScoreBaselineDerived,hi_res_GCS_TIL_means.TILmean).pvalue,
-     spearmanr(hi_res_GCS_TIL_maxes.GCSScoreBaselineDerived,hi_res_GCS_TIL_maxes.TILmax).pvalue]
-    group7_firsts = ['TILmean','TILmax']
-    group7_seconds = ['GCS','GCS']
-
-    # Construct dataframe of Spearman Rho correlations
-    group7_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'HighResolution','first':group7_firsts,'second':group7_seconds,'rho':group7_rhos,'pval':group7_p_vals})
-
-    ## Group 8: manually-recorded neuromonitoring + GOSE population
-    # Create sub-directory for group 8
-    group8_dir = os.path.join(bs_dir,'group8')
-
-    # Load group 8 resamples
-    group8_bs_resamples = pd.read_pickle(os.path.join(group8_dir,'group8_resamples.pkl'))
-
-    # Extract current group 8 resamples
-    curr_group8_resamples = group8_bs_resamples[group8_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
-    # Load current correlation dataframes
-    lo_res_GOSE_TIL_means = pd.read_pickle(os.path.join(group8_dir,'lo_res_GOSE_TIL_mean.pkl'))
-    lo_res_GOSE_TIL_maxes = pd.read_pickle(os.path.join(group8_dir,'lo_res_GOSE_TIL_max.pkl'))
-    lo_res_prognosis_TIL_means = pd.read_pickle(os.path.join(group8_dir,'lo_res_prognosis_TIL_mean.pkl'))
-    lo_res_prognosis_TIL_maxes = pd.read_pickle(os.path.join(group8_dir,'lo_res_prognosis_TIL_max.pkl'))
-    
-    # Filter current correlation dataframes
-    lo_res_GOSE_TIL_means = lo_res_GOSE_TIL_means[lo_res_GOSE_TIL_means.GUPI.isin(curr_group8_resamples)].reset_index(drop=True)
-    lo_res_GOSE_TIL_maxes = lo_res_GOSE_TIL_maxes[lo_res_GOSE_TIL_maxes.GUPI.isin(curr_group8_resamples)].reset_index(drop=True)
-    lo_res_prognosis_TIL_means = lo_res_prognosis_TIL_means[lo_res_prognosis_TIL_means.GUPI.isin(curr_group8_resamples)].reset_index(drop=True)
-    lo_res_prognosis_TIL_maxes = lo_res_prognosis_TIL_maxes[lo_res_prognosis_TIL_maxes.GUPI.isin(curr_group8_resamples)].reset_index(drop=True)
-
-    # Calculate Spearman Rho correlation of independent measures
-    group8_rhos = [spearmanr(lo_res_GOSE_TIL_means.GOSE6monthEndpointDerived,lo_res_GOSE_TIL_means.TILmean).statistic,
-                   spearmanr(lo_res_GOSE_TIL_means.GOS6monthEndpointDerived,lo_res_GOSE_TIL_means.TILmean).statistic,
-                   spearmanr(lo_res_GOSE_TIL_maxes.GOSE6monthEndpointDerived,lo_res_GOSE_TIL_maxes.TILmax).statistic,
-                   spearmanr(lo_res_GOSE_TIL_maxes.GOS6monthEndpointDerived,lo_res_GOSE_TIL_maxes.TILmax).statistic,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>1)'],lo_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>3)'],lo_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>4)'],lo_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>5)'],lo_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>6)'],lo_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>7)'],lo_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>1)'],lo_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>3)'],lo_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>4)'],lo_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>5)'],lo_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>6)'],lo_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>7)'],lo_res_prognosis_TIL_maxes.TILmax).statistic]
-    group8_p_vals = [spearmanr(lo_res_GOSE_TIL_means.GOSE6monthEndpointDerived,lo_res_GOSE_TIL_means.TILmean).pvalue,
-                   spearmanr(lo_res_GOSE_TIL_means.GOS6monthEndpointDerived,lo_res_GOSE_TIL_means.TILmean).pvalue,
-                   spearmanr(lo_res_GOSE_TIL_maxes.GOSE6monthEndpointDerived,lo_res_GOSE_TIL_maxes.TILmax).pvalue,
-                   spearmanr(lo_res_GOSE_TIL_maxes.GOS6monthEndpointDerived,lo_res_GOSE_TIL_maxes.TILmax).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>1)'],lo_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>3)'],lo_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>4)'],lo_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>5)'],lo_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>6)'],lo_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_means['Pr(GOSE>7)'],lo_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>1)'],lo_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>3)'],lo_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>4)'],lo_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>5)'],lo_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>6)'],lo_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(lo_res_prognosis_TIL_maxes['Pr(GOSE>7)'],lo_res_prognosis_TIL_maxes.TILmax).pvalue]
-    group8_firsts = ['TILmean','TILmean','TILmax','TILmax','TILmean','TILmean','TILmean','TILmean','TILmean','TILmean','TILmax','TILmax','TILmax','TILmax','TILmax','TILmax']
-    group8_seconds = ['GOSE','GOS','GOSE','GOS','Pr(GOSE>1)','Pr(GOSE>3)','Pr(GOSE>4)','Pr(GOSE>5)','Pr(GOSE>6)','Pr(GOSE>7)','Pr(GOSE>1)','Pr(GOSE>3)','Pr(GOSE>4)','Pr(GOSE>5)','Pr(GOSE>6)','Pr(GOSE>7)']
-
-    # Construct dataframe of Spearman Rho correlations
-    group8_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'LowResolution','first':group8_firsts,'second':group8_seconds,'rho':group8_rhos,'pval':group8_p_vals})
-
-    ## Group 9: high-resolution neuromonitoring + GOSE population
-    # Create sub-directory for group 9
-    group9_dir = os.path.join(bs_dir,'group9')
-
-    # Load group 9 resamples
-    group9_bs_resamples = pd.read_pickle(os.path.join(group9_dir,'group9_resamples.pkl'))
-
-    # Extract current group 9 resamples
-    curr_group9_resamples = group9_bs_resamples[group9_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
-    # Load current correlation dataframes
-    hi_res_GOSE_TIL_means = pd.read_pickle(os.path.join(group9_dir,'hi_res_GOSE_TIL_mean.pkl'))
-    hi_res_GOSE_TIL_maxes = pd.read_pickle(os.path.join(group9_dir,'hi_res_GOSE_TIL_max.pkl'))
-    hi_res_prognosis_TIL_means = pd.read_pickle(os.path.join(group9_dir,'hi_res_prognosis_TIL_mean.pkl'))
-    hi_res_prognosis_TIL_maxes = pd.read_pickle(os.path.join(group9_dir,'hi_res_prognosis_TIL_max.pkl'))
-    
-    # Filter current correlation dataframes
-    hi_res_GOSE_TIL_means = hi_res_GOSE_TIL_means[hi_res_GOSE_TIL_means.GUPI.isin(curr_group9_resamples)].reset_index(drop=True)
-    hi_res_GOSE_TIL_maxes = hi_res_GOSE_TIL_maxes[hi_res_GOSE_TIL_maxes.GUPI.isin(curr_group9_resamples)].reset_index(drop=True)
-    hi_res_prognosis_TIL_means = hi_res_prognosis_TIL_means[hi_res_prognosis_TIL_means.GUPI.isin(curr_group9_resamples)].reset_index(drop=True)
-    hi_res_prognosis_TIL_maxes = hi_res_prognosis_TIL_maxes[hi_res_prognosis_TIL_maxes.GUPI.isin(curr_group9_resamples)].reset_index(drop=True)
-
-    # Calculate Spearman Rho correlation of independent measures
-    group9_rhos = [spearmanr(hi_res_GOSE_TIL_means.GOSE6monthEndpointDerived,hi_res_GOSE_TIL_means.TILmean).statistic,
-                   spearmanr(hi_res_GOSE_TIL_means.GOS6monthEndpointDerived,hi_res_GOSE_TIL_means.TILmean).statistic,
-                   spearmanr(hi_res_GOSE_TIL_maxes.GOSE6monthEndpointDerived,hi_res_GOSE_TIL_maxes.TILmax).statistic,
-                   spearmanr(hi_res_GOSE_TIL_maxes.GOS6monthEndpointDerived,hi_res_GOSE_TIL_maxes.TILmax).statistic,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>1)'],hi_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>3)'],hi_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>4)'],hi_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>5)'],hi_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>6)'],hi_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>7)'],hi_res_prognosis_TIL_means.TILmean).statistic,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>1)'],hi_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>3)'],hi_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>4)'],hi_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>5)'],hi_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>6)'],hi_res_prognosis_TIL_maxes.TILmax).statistic,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>7)'],hi_res_prognosis_TIL_maxes.TILmax).statistic]
-    group9_p_vals = [spearmanr(hi_res_GOSE_TIL_means.GOSE6monthEndpointDerived,hi_res_GOSE_TIL_means.TILmean).pvalue,
-                   spearmanr(hi_res_GOSE_TIL_means.GOS6monthEndpointDerived,hi_res_GOSE_TIL_means.TILmean).pvalue,
-                   spearmanr(hi_res_GOSE_TIL_maxes.GOSE6monthEndpointDerived,hi_res_GOSE_TIL_maxes.TILmax).pvalue,
-                   spearmanr(hi_res_GOSE_TIL_maxes.GOS6monthEndpointDerived,hi_res_GOSE_TIL_maxes.TILmax).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>1)'],hi_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>3)'],hi_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>4)'],hi_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>5)'],hi_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>6)'],hi_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_means['Pr(GOSE>7)'],hi_res_prognosis_TIL_means.TILmean).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>1)'],hi_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>3)'],hi_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>4)'],hi_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>5)'],hi_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>6)'],hi_res_prognosis_TIL_maxes.TILmax).pvalue,
-                   spearmanr(hi_res_prognosis_TIL_maxes['Pr(GOSE>7)'],hi_res_prognosis_TIL_maxes.TILmax).pvalue]
-    group9_firsts = ['TILmean','TILmean','TILmax','TILmax','TILmean','TILmean','TILmean','TILmean','TILmean','TILmean','TILmax','TILmax','TILmax','TILmax','TILmax','TILmax']
-    group9_seconds = ['GOSE','GOS','GOSE','GOS','Pr(GOSE>1)','Pr(GOSE>3)','Pr(GOSE>4)','Pr(GOSE>5)','Pr(GOSE>6)','Pr(GOSE>7)','Pr(GOSE>1)','Pr(GOSE>3)','Pr(GOSE>4)','Pr(GOSE>5)','Pr(GOSE>6)','Pr(GOSE>7)']
-
-    # Construct dataframe of Spearman Rho correlations
-    group9_spearmans = pd.DataFrame({'resample_idx':(array_task_id+1),'population':'HighResolution','first':group9_firsts,'second':group9_seconds,'rho':group9_rhos,'pval':group9_p_vals})
-
-    ## Compile results and save
-    # Compiled Spearman's Rho results
-    compiled_spearmans = pd.concat([group1_spearmans,group2_spearmans,group3_spearmans,group4_spearmans,group5_spearmans,group6_spearmans,group7_spearmans,group8_spearmans,group9_spearmans],ignore_index=True)
-
-    # Compile mixed-effect model parameters into single dataframe
-    melm_firsts = ['TIL24','TIL24','TIL24','TIL24','TIL24','TIL24','TIL24','TIL24']
-    melm_seconds = ['ICP24','CPP24','ICP24','CPP24','ICP24','CPP24','NA24','NA24']
-    melm_populations = ['LowResolution','LowResolution','HighResolution','HighResolution','PriorStudy','PriorStudy','LowResolution','HighResolution']
-    melm_intercepts = [lo_res_mlmf_ICP_TIL_24.params.Intercept,
-                       lo_res_mlmf_CPP_TIL_24.params.Intercept,
-                       hi_res_mlmf_ICP_TIL_24.params.Intercept,
-                       hi_res_mlmf_CPP_TIL_24.params.Intercept,
-                       prior_study_mlmf_ICP_TIL_24.params.Intercept,
-                       prior_study_mlmf_CPP_TIL_24.params.Intercept,
-                       lo_res_mlmf_Sodium_TIL_24.params.Intercept,
-                       hi_res_mlmf_Sodium_TIL_24.params.Intercept]
-    melm_TIL_coeffs = [lo_res_mlmf_ICP_TIL_24.params.TotalTIL,
-                       lo_res_mlmf_CPP_TIL_24.params.TotalTIL,
-                       hi_res_mlmf_ICP_TIL_24.params.TotalTIL,
-                       hi_res_mlmf_CPP_TIL_24.params.TotalTIL,
-                       prior_study_mlmf_ICP_TIL_24.params.TotalTIL,
-                       prior_study_mlmf_CPP_TIL_24.params.TotalTIL,
-                       lo_res_mlmf_Sodium_TIL_24.params.TotalTIL,
-                       hi_res_mlmf_Sodium_TIL_24.params.TotalTIL]
-    melm_RE_variance = [lo_res_mlmf_ICP_TIL_24.cov_re.values[0][0],
-                       lo_res_mlmf_CPP_TIL_24.cov_re.values[0][0],
-                       hi_res_mlmf_ICP_TIL_24.cov_re.values[0][0],
-                       hi_res_mlmf_CPP_TIL_24.cov_re.values[0][0],
-                       prior_study_mlmf_ICP_TIL_24.cov_re.values[0][0],
-                       prior_study_mlmf_CPP_TIL_24.cov_re.values[0][0],
-                       lo_res_mlmf_Sodium_TIL_24.cov_re.values[0][0],
-                       hi_res_mlmf_Sodium_TIL_24.cov_re.values[0][0]]
-    melm_resid_variance = [lo_res_mlmf_ICP_TIL_24.resid.var(),
-                           lo_res_mlmf_CPP_TIL_24.resid.var(),
-                           hi_res_mlmf_ICP_TIL_24.resid.var(),
-                           hi_res_mlmf_CPP_TIL_24.resid.var(),
-                           prior_study_mlmf_ICP_TIL_24.resid.var(),
-                           prior_study_mlmf_CPP_TIL_24.resid.var(),
-                           lo_res_mlmf_Sodium_TIL_24.resid.var(),
-                           hi_res_mlmf_Sodium_TIL_24.resid.var()]
-    compiled_mixed_effects = pd.DataFrame({'resample_idx':(array_task_id+1),
-                                           'population':melm_populations,
-                                           'first':melm_firsts,
-                                           'second':melm_seconds,
-                                           'TIL_coefficients':melm_TIL_coeffs,
-                                           'TIL_intercepts':melm_intercepts,
-                                           'RE_variance':melm_RE_variance,
-                                           'Residual_variance':melm_resid_variance})
-    
-    # Save compiled Spearman's Rho results
-    compiled_spearmans.to_pickle(os.path.join(bs_results_dir,'compiled_spearman_rhos_resample_'+str(array_task_id+1).zfill(4)+'.pkl'))
-
-    # Save compiled mixed-effect model parameters
-    compiled_mixed_effects.to_pickle(os.path.join(bs_results_dir,'compiled_mixed_effects_resample_'+str(array_task_id+1).zfill(4)+'.pkl'))
+    # Save concatenated dataframe
+    compiled_mlm_df.to_pickle(os.path.join(bs_results_dir,'compiled_mixed_effects_resample_'+str(array_task_id+1).zfill(4)+'.pkl'))
 
 if __name__ == '__main__':
     
