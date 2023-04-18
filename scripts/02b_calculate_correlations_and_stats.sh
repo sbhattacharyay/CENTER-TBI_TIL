@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J TIL_correlations
-#SBATCH -A MENON-SL2-CPU
+#SBATCH -A MENON-SL3-CPU
 #SBATCH -p icelake
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
