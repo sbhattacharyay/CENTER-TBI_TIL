@@ -288,17 +288,21 @@ def calculate_rmcorr(x,y,message):
             curr_pair_df = x[['GUPI','TILTimepoint','TILDate',curr_pair[0]]].merge(y[['GUPI','TILTimepoint','TILDate',curr_pair[1]]],how='inner').dropna().reset_index(drop=True)
         except:
             curr_pair_df = y[['GUPI','TILTimepoint','TILDate',curr_pair[0]]].merge(x[['GUPI','TILTimepoint','TILDate',curr_pair[1]]],how='inner').dropna().reset_index(drop=True)
+        
+        try:
+            # Calculate repeated-measures correlation
+            curr_rm_corr = pg.rm_corr(data=curr_pair_df, x=curr_pair[0], y=curr_pair[1], subject='GUPI')
 
-        # Calculate repeated-measures correlation
-        curr_rm_corr = pg.rm_corr(data=curr_pair_df, x=curr_pair[0], y=curr_pair[1], subject='GUPI')
-
-        # Append information to running lists
-        col_1.append(curr_pair[0])
-        col_2.append(curr_pair[1])
-        rs.append(curr_rm_corr.r[0])
-        pvals.append(curr_rm_corr.pval[0])
-        counts.append(curr_pair_df.shape[0])
-        patients.append(curr_pair_df.GUPI.nunique())
+            # Append information to running lists
+            col_1.append(curr_pair[0])
+            col_2.append(curr_pair[1])
+            rs.append(curr_rm_corr.r[0])
+            pvals.append(curr_rm_corr.pval[0])
+            counts.append(curr_pair_df.shape[0])
+            patients.append(curr_pair_df.GUPI.nunique())
+            
+        except:
+            pass
 
     # Construct dataframe from running lists
     corr_df = pd.DataFrame({'first':col_1,'second':col_2,'rmcorr':rs,'pval':pvals,'count':counts,'patient_count':patients})

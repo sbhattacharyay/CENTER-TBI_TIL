@@ -63,6 +63,7 @@ stats_file_info_df = pd.DataFrame({'FILE':stats_files,
 
 # Separate mixed effects and spearman's rho dataframes
 mixed_effects_info_df = stats_file_info_df[stats_file_info_df.METRIC == 'mixed_effects'].reset_index(drop=True)
+rmcorr_info_df = stats_file_info_df[stats_file_info_df.METRIC == 'rmcorr'].reset_index(drop=True)
 spearman_rhos_info_df = stats_file_info_df[stats_file_info_df.METRIC == 'spearman_rhos'].reset_index(drop=True)
 
 # Partition stats files across available cores
@@ -71,22 +72,29 @@ s[:(mixed_effects_info_df.RESAMPLE_IDX.max() - sum(s))] = [over+1 for over in s[
 end_idx = np.cumsum(s)
 start_idx = np.insert(end_idx[:-1],0,0)
 mixed_effects_files_per_core = [(mixed_effects_info_df.iloc[start_idx[idx]:end_idx[idx],:].reset_index(drop=True),True,'Loading and compiling mixed effect statistics') for idx in range(len(start_idx))]
+rmcorr_files_per_core = [(rmcorr_info_df.iloc[start_idx[idx]:end_idx[idx],:].reset_index(drop=True),True,'Loading and compiling repeated-measures correlation statistics') for idx in range(len(start_idx))]
 spearman_rhos_files_per_core = [(spearman_rhos_info_df.iloc[start_idx[idx]:end_idx[idx],:].reset_index(drop=True),True,'Loading and compiling Spearman rhos') for idx in range(len(start_idx))]
 
 # Load statistics dataframes in parallel
 with multiprocessing.Pool(NUM_CORES) as pool:
     compiled_mixed_effects = pd.concat(pool.starmap(load_statistics, mixed_effects_files_per_core),ignore_index=True)
 with multiprocessing.Pool(NUM_CORES) as pool:
+    compiled_rmcorr = pd.concat(pool.starmap(load_statistics, rmcorr_files_per_core),ignore_index=True)
+with multiprocessing.Pool(NUM_CORES) as pool:
     compiled_spearman_rhos = pd.concat(pool.starmap(load_statistics, spearman_rhos_files_per_core),ignore_index=True)
     
 # Save compiled statistics
 compiled_mixed_effects.to_csv('../bootstrapping_results/compiled_mixed_effects_results.csv',index=False)
+compiled_rmcorr.to_csv('../bootstrapping_results/compiled_rmcorr_results.csv',index=False)
 compiled_spearman_rhos.to_csv('../bootstrapping_results/compiled_spearman_rhos_results.csv',index=False)
 
 ### III. Calculate 95% confidence intervals
 ## Load compiled statistics
 # Load mixed effects values
 compiled_mixed_effects = pd.read_csv('../bootstrapping_results/compiled_mixed_effects_results.csv')
+
+# Load repeated-measures correlation values
+compiled_rmcorr = pd.read_csv('../bootstrapping_results/compiled_rmcorr_results.csv')
 
 # Load Spearman's rho values
 compiled_spearman_rhos = pd.read_csv('../bootstrapping_results/compiled_spearman_rhos_results.csv')
@@ -95,11 +103,14 @@ compiled_spearman_rhos = pd.read_csv('../bootstrapping_results/compiled_spearman
 # Caclulate and format 95% confidence intervals
 CI_spearman_rhos = compiled_spearman_rhos.groupby(['population','first','second'],as_index=False)['rho'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
 CI_mixed_effects = compiled_mixed_effects.groupby(['population','first','second'],as_index=False)['TIL_coefficients'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+CI_rmcorr = compiled_rmcorr.groupby(['population','first','second'],as_index=False)['TIL_coefficients'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
 
 # Add formatting confidence interval 
 CI_spearman_rhos['FormattedCI'] = CI_spearman_rhos['median'].round(2).astype(str)+' ('+CI_spearman_rhos.lo.round(2).astype(str)+'–'+CI_spearman_rhos.hi.round(2).astype(str)+')'
 CI_mixed_effects['FormattedCI'] = CI_mixed_effects['median'].round(2).astype(str)+' ('+CI_mixed_effects.lo.round(2).astype(str)+'–'+CI_mixed_effects.hi.round(2).astype(str)+')'
+CI_rmcorr['FormattedCI'] = CI_rmcorr['median'].round(2).astype(str)+' ('+CI_rmcorr.lo.round(2).astype(str)+'–'+CI_rmcorr.hi.round(2).astype(str)+')'
 
 # Save formatted confidence intervals
 CI_mixed_effects.to_csv('../bootstrapping_results/CI_mixed_effects_results.csv',index=False)
 CI_spearman_rhos.to_csv('../bootstrapping_results/CI_spearman_rhos_results.csv',index=False)
+CI_rmcorr.to_csv('../bootstrapping_results/CI_rmcorr_results.csv',index=False)

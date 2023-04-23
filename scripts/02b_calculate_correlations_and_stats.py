@@ -63,17 +63,26 @@ def main(array_task_id):
 
     ## Load bootstrapping resamples and select GUPIs of current resample_idx
     # Load and extract TIL validation resamples
-    TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'TIL_validation_resamples.pkl'))
-    curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
+#     TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'TIL_validation_resamples.pkl'))
+#     curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
+    TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'remaining_TIL_validation_resamples.pkl'))
+    curr_rs_idx = TIL_validation_bs_resamples.RESAMPLE_IDX[array_task_id]
+    curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
 
     # Load and extract TIL-ICP_EH validation resamples
-    TIL_ICPEH_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPEH_dir,'TIL_ICPEH_resamples.pkl'))
-    curr_TIL_ICPEH_resamples = TIL_ICPEH_bs_resamples[TIL_ICPEH_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
+#     TIL_ICPEH_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPEH_dir,'TIL_ICPEH_resamples.pkl'))
+#     curr_TIL_ICPEH_resamples = TIL_ICPEH_bs_resamples[TIL_ICPEH_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
+    TIL_ICPEH_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPEH_dir,'remaining_TIL_ICPEH_resamples.pkl'))
+    curr_rs_idx = TIL_ICPEH_bs_resamples.RESAMPLE_IDX[array_task_id]
+    curr_TIL_ICPEH_resamples = TIL_ICPEH_bs_resamples[TIL_ICPEH_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
+    
     # Load and extract TIL-ICP_HR validation resamples
-    TIL_ICPHR_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPHR_dir,'TIL_ICPHR_resamples.pkl'))
-    curr_TIL_ICPHR_resamples = TIL_ICPHR_bs_resamples[TIL_ICPHR_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-
+#     TIL_ICPHR_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPHR_dir,'TIL_ICPHR_resamples.pkl'))
+#     curr_TIL_ICPHR_resamples = TIL_ICPHR_bs_resamples[TIL_ICPHR_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
+    TIL_ICPHR_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPHR_dir,'remaining_TIL_ICPHR_resamples.pkl'))
+    curr_rs_idx = TIL_ICPHR_bs_resamples.RESAMPLE_IDX[array_task_id]
+    curr_TIL_ICPHR_resamples = TIL_ICPHR_bs_resamples[TIL_ICPHR_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
+    
     ## Load and filter information dataframes
     # Formatted scale scores
     raw_formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
@@ -160,10 +169,10 @@ def main(array_task_id):
 
     # Concatenate Spearman's rho dataframes
     compiled_spearmans_dataframe = pd.concat([within_TIL_spearmans,TIL_global_spearmans,TIL_lo_res_spearmans,TIL_hi_res_spearmans],ignore_index=True)
-    compiled_spearmans_dataframe['resample_idx'] = array_task_id+1
+    compiled_spearmans_dataframe['resample_idx'] = curr_rs_idx
 
     # Save concatenated dataframe
-    compiled_spearmans_dataframe.to_pickle(os.path.join(bs_results_dir,'compiled_spearman_rhos_resample_'+str(array_task_id+1).zfill(4)+'.pkl'))
+    compiled_spearmans_dataframe.to_pickle(os.path.join(bs_results_dir,'compiled_spearman_rhos_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
     ## Calculate TIL correlations
     # Define vectors of particular columns columns
@@ -245,10 +254,10 @@ def main(array_task_id):
     ## Concatenate all the repeated-measures correlation results and save
     # Concatenate
     compiled_rms_df = pd.concat([across_TIL_rms,compiled_within_rms,compiled_lo_res_rms,compiled_hi_res_rms,compiled_Na_rms,compiled_Na_res_rms,deltaTIL_rms],ignore_index=True)
-    compiled_rms_df['resample_idx'] = array_task_id+1
+    compiled_rms_df['resample_idx'] = curr_rs_idx
 
     # Save concatenated dataframe
-    compiled_rms_df.to_pickle(os.path.join(bs_results_dir,'compiled_rmcorr_resample_'+str(array_task_id+1).zfill(4)+'.pkl'))
+    compiled_rms_df.to_pickle(os.path.join(bs_results_dir,'compiled_rmcorr_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
     ## Mixed-effects regression
     # Define component columns for each scale
@@ -311,10 +320,10 @@ def main(array_task_id):
 
     # Concatenate all mlm model information
     compiled_mlm_df = pd.concat([compiled_lo_res_mlm,compiled_hi_res_mlm,compiled_Na_mlm,TIL_ICP_Na_mlm],ignore_index=True)
-    compiled_mlm_df['resample_idx'] = array_task_id+1
+    compiled_mlm_df['resample_idx'] = curr_rs_idx
 
     # Save concatenated dataframe
-    compiled_mlm_df.to_pickle(os.path.join(bs_results_dir,'compiled_mixed_effects_resample_'+str(array_task_id+1).zfill(4)+'.pkl'))
+    compiled_mlm_df.to_pickle(os.path.join(bs_results_dir,'compiled_mixed_effects_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
 if __name__ == '__main__':
     
