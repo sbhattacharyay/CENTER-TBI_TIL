@@ -99,11 +99,11 @@ compiled_rmcorr = pd.read_csv('../bootstrapping_results/compiled_rmcorr_results.
 # Load Spearman's rho values
 compiled_spearman_rhos = pd.read_csv('../bootstrapping_results/compiled_spearman_rhos_results.csv')
 
-## Caclulate and format 95% confidence intervals
-# Caclulate and format 95% confidence intervals
-CI_spearman_rhos = compiled_spearman_rhos.groupby(['population','first','second'],as_index=False)['rho'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
-CI_mixed_effects = compiled_mixed_effects.groupby(['population','first','second'],as_index=False)['TIL_coefficients'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
-CI_rmcorr = compiled_rmcorr.groupby(['population','first','second'],as_index=False)['TIL_coefficients'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+## Calculate and format 95% confidence intervals
+# Calculate and format 95% confidence intervals
+CI_spearman_rhos = compiled_spearman_rhos.melt(id_vars=['first','second','Population','count','resample_idx'],var_name='metric').groupby(['Population','first','second','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+CI_mixed_effects = compiled_mixed_effects.melt(id_vars=['Type','Formula','Name','Scale','Population','count','patient_count','resample_idx'],var_name='metric').groupby(['Population','Type','Formula','Name','Scale','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+CI_rmcorr = compiled_rmcorr.melt(id_vars=['first','second','Population','Scale','count','patient_count','resample_idx'],var_name='metric').groupby(['Population','Scale','first','second','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
 
 # Add formatting confidence interval 
 CI_spearman_rhos['FormattedCI'] = CI_spearman_rhos['median'].round(2).astype(str)+' ('+CI_spearman_rhos.lo.round(2).astype(str)+'–'+CI_spearman_rhos.hi.round(2).astype(str)+')'
