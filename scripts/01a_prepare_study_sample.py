@@ -185,17 +185,49 @@ mod_daily_TIL_info.WLST = mod_daily_TIL_info.WLST.fillna(0)
 # Filter out columns in which TILDate occurs during or after WLST decision
 mod_daily_TIL_info = mod_daily_TIL_info[(mod_daily_TIL_info.TILDate<mod_daily_TIL_info.WLSTDateComponent)|(mod_daily_TIL_info.WLST==0)].reset_index(drop=True)
 
-## Ensure refractory decompressive craniectomy surgery markers carry over onto subsequent TIL assessments for each patient
+## First, fix missing instances of decompressive craniectomy documented elsewhere
 # First, sort modified daily TIL dataframe
 mod_daily_TIL_info = mod_daily_TIL_info.sort_values(by=['GUPI','TILDate'],ignore_index=True)
 
-# Identify GUPIs which contain markers for intracranial operation and decompressive craniectomy
-gupis_with_initial_DecomCranectomy = mod_daily_TIL_info[(mod_daily_TIL_info.TILICPSurgeryDecomCranectomy==1)&(mod_daily_TIL_info.TILTimepoint==1)].GUPI.unique()
+# Load cranial surgeries dataset information
+cran_surgeries_info = pd.read_csv('../CENTER-TBI/SurgeriesCranial/data.csv',na_values = ["NA","NaN"," ", ""])[['GUPI','SurgeryStartDate','SurgeryStartTime','SurgeryEndDate','SurgeryEndTime','SurgeryDescCranial','SurgeryCranialReason']]
+
+# Select columns that indicate pertinent decompresive craniectomy information
+cran_surgeries_info = cran_surgeries_info[(cran_surgeries_info.GUPI.isin(mod_daily_TIL_info.GUPI))&(cran_surgeries_info.SurgeryDescCranial.isin([7,71,72]))].reset_index(drop=True)
+cran_surgeries_info['TILDate'] = pd.to_datetime(cran_surgeries_info['SurgeryStartDate'],format = '%Y-%m-%d')
+cran_surgeries_info = cran_surgeries_info[['GUPI','TILDate']].drop_duplicates(ignore_index=True).merge(mod_daily_TIL_info[['GUPI','TILDate']].drop_duplicates(ignore_index=True),how='inner')
+
+# Iterate through cranial surgery dataframe to document instances of decompressive craniectomy if missing
+for curr_cs_row in tqdm(range(cran_surgeries_info.shape[0]), 'Fixing decompressive craniectomy instances if missing'):
+    # Extract current GUPI and date
+    curr_GUPI = cran_surgeries_info.GUPI[curr_cs_row]
+    curr_date = cran_surgeries_info.TILDate[curr_cs_row]
+
+    # Current TIL row corresponding to the current date and GUPI
+    curr_TIL_row = mod_daily_TIL_info[(mod_daily_TIL_info.GUPI==curr_GUPI)&(mod_daily_TIL_info.TILDate==curr_date)]
+
+    # Ensure decompressive craniectomy markers if date and GUPI match
+    if curr_TIL_row.shape[0] != 0:
+        mod_daily_TIL_info.TILICPSurgeryDecomCranectomy[curr_TIL_row.index] = 1
+
+## Ensure refractory decompressive craniectomy surgery markers carry over onto subsequent TIL assessments for each patient
+# Load CENTER-TBI dataset demographic information
+CENTER_TBI_DC_info = pd.read_csv('../CENTER-TBI/DemoInjHospMedHx/data.csv',na_values = ["NA","NaN"," ", ""])[['GUPI','DecompressiveCran','DecompressiveCranLocation','DecompressiveCranReason','DecompressiveCranType','DecompressiveSize']]
+
+# Select columns that indicate pertinent decompresive craniectomy information
+CENTER_TBI_DC_info = CENTER_TBI_DC_info[(CENTER_TBI_DC_info.GUPI.isin(mod_daily_TIL_info.GUPI))&(CENTER_TBI_DC_info.DecompressiveCran==1)].reset_index(drop=True)
+
+# Identify GUPIs by the categorized type of decompressive craniectomy
 gupis_with_DecomCranectomy = mod_daily_TIL_info[(mod_daily_TIL_info.TILICPSurgeryDecomCranectomy==1)].GUPI.unique()
-gupis_with_refract_DecomCranectomy = np.setdiff1d(gupis_with_DecomCranectomy, gupis_with_initial_DecomCranectomy)
+gupis_with_initial_DecomCranectomy = mod_daily_TIL_info[(mod_daily_TIL_info.TILICPSurgeryDecomCranectomy==1)&(mod_daily_TIL_info.TILTimepoint==1)].GUPI.unique()
+gupis_with_noninitial_DecomCranectomy = np.setdiff1d(gupis_with_DecomCranectomy, gupis_with_initial_DecomCranectomy)
+gupis_with_refract_DecomCranectomy_1 = CENTER_TBI_DC_info[CENTER_TBI_DC_info.DecompressiveCranReason==2].GUPI.unique()
+gupis_with_refract_DecomCranectomy_2 = np.intersect1d(np.setdiff1d(gupis_with_DecomCranectomy, CENTER_TBI_DC_info.GUPI.unique()),gupis_with_noninitial_DecomCranectomy)
+gupis_with_refract_DecomCranectomy = np.union1d(gupis_with_refract_DecomCranectomy_1,gupis_with_refract_DecomCranectomy_2)
+gupis_with_nonrefract_DecomCranectomy = np.setdiff1d(gupis_with_DecomCranectomy, gupis_with_refract_DecomCranectomy)
 
 # Iterate through GUPIs with initial decompressive craniectomies and correct surgery indicators and the total TIL score
-for curr_GUPI in tqdm(gupis_with_initial_DecomCranectomy, 'Fixing TotalTIL and initial decompressive craniectomy indicators'):
+for curr_GUPI in tqdm(gupis_with_nonrefract_DecomCranectomy, 'Fixing TotalTIL and initial decompressive craniectomy indicators'):
 
     # Extract TIL assessments of current patient
     curr_GUPI_daily_TIL = mod_daily_TIL_info[(mod_daily_TIL_info.GUPI==curr_GUPI)].reset_index(drop=True)
@@ -238,8 +270,11 @@ for curr_GUPI in tqdm(gupis_with_refract_DecomCranectomy, 'Fixing TotalTIL and r
     curr_TILICPSurgeryDecomCranectomy = curr_GUPI_daily_TIL.TILICPSurgeryDecomCranectomy
 
     # Identify first TIL instance of surgery
-    firstSurgInstance = curr_TILICPSurgeryDecomCranectomy.index[curr_TILICPSurgeryDecomCranectomy==1].tolist()[0]
-
+    try:
+        firstSurgInstance = curr_TILICPSurgeryDecomCranectomy.index[curr_TILICPSurgeryDecomCranectomy==1].tolist()[0]
+    except:
+        firstSurgInstance = 1
+        
     # Fix the decompressive craniectomy indicators of current patient
     fix_TILICPSurgeryDecomCranectomy = curr_TILICPSurgeryDecomCranectomy.copy()
     if firstSurgInstance != (len(fix_TILICPSurgeryDecomCranectomy)-1):

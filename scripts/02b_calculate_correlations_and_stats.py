@@ -63,25 +63,26 @@ def main(array_task_id):
 
     ## Load bootstrapping resamples and select GUPIs of current resample_idx
     # Load and extract TIL validation resamples
-#     TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'TIL_validation_resamples.pkl'))
-#     curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-    TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'remaining_TIL_validation_resamples.pkl'))
-    curr_rs_idx = TIL_validation_bs_resamples.RESAMPLE_IDX[array_task_id]
+    curr_rs_idx = array_task_id+1
+    TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'TIL_validation_resamples.pkl'))
     curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
+    # TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'remaining_TIL_validation_resamples.pkl'))
+    # curr_rs_idx = TIL_validation_bs_resamples.RESAMPLE_IDX[array_task_id]
+    # curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
 
     # Load and extract TIL-ICP_EH validation resamples
-#     TIL_ICPEH_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPEH_dir,'TIL_ICPEH_resamples.pkl'))
-#     curr_TIL_ICPEH_resamples = TIL_ICPEH_bs_resamples[TIL_ICPEH_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-    TIL_ICPEH_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPEH_dir,'remaining_TIL_ICPEH_resamples.pkl'))
-    curr_rs_idx = TIL_ICPEH_bs_resamples.RESAMPLE_IDX[array_task_id]
+    TIL_ICPEH_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPEH_dir,'TIL_ICPEH_resamples.pkl'))
     curr_TIL_ICPEH_resamples = TIL_ICPEH_bs_resamples[TIL_ICPEH_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
+    # TIL_ICPEH_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPEH_dir,'remaining_TIL_ICPEH_resamples.pkl'))
+    # curr_rs_idx = TIL_ICPEH_bs_resamples.RESAMPLE_IDX[array_task_id]
+    # curr_TIL_ICPEH_resamples = TIL_ICPEH_bs_resamples[TIL_ICPEH_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
     
     # Load and extract TIL-ICP_HR validation resamples
-#     TIL_ICPHR_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPHR_dir,'TIL_ICPHR_resamples.pkl'))
-#     curr_TIL_ICPHR_resamples = TIL_ICPHR_bs_resamples[TIL_ICPHR_bs_resamples.RESAMPLE_IDX==(array_task_id+1)].GUPIs.values[0]
-    TIL_ICPHR_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPHR_dir,'remaining_TIL_ICPHR_resamples.pkl'))
-    curr_rs_idx = TIL_ICPHR_bs_resamples.RESAMPLE_IDX[array_task_id]
+    TIL_ICPHR_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPHR_dir,'TIL_ICPHR_resamples.pkl'))
     curr_TIL_ICPHR_resamples = TIL_ICPHR_bs_resamples[TIL_ICPHR_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
+    # TIL_ICPHR_bs_resamples = pd.read_pickle(os.path.join(TIL_ICPHR_dir,'remaining_TIL_ICPHR_resamples.pkl'))
+    # curr_rs_idx = TIL_ICPHR_bs_resamples.RESAMPLE_IDX[array_task_id]
+    # curr_TIL_ICPHR_resamples = TIL_ICPHR_bs_resamples[TIL_ICPHR_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
     
     ## Load and filter information dataframes
     # Formatted scale scores
