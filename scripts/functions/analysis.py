@@ -26,6 +26,11 @@ from pandas.api.types import CategoricalDtype
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 warnings.filterwarnings(action="ignore")
 
+# SciKit-Learn methods
+from sklearn.utils import resample
+from sklearn.metrics import mutual_info_score, roc_curve, roc_auc_score, matthews_corrcoef, accuracy_score
+from sklearn.feature_selection._mutual_info import mutual_info_regression, _estimate_mi
+
 # StatsModels libraries
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
@@ -377,21 +382,231 @@ def calc_melm(x,y,total_name,component_tf,component_list,message):
 def calc_ICP_Na_melm(scale_ICP_Na_df,total_name):
 
     # Calculate current melm
-    curr_mlm = smf.mixedlm(total_name+' ~ meanSodium + ICPmean', scale_ICP_Na_df, groups=scale_ICP_Na_df["GUPI"]).fit()
+    curr_mlm1 = smf.mixedlm(total_name+' ~ meanSodium + ICPmean', scale_ICP_Na_df, groups=scale_ICP_Na_df["GUPI"]).fit()
+    curr_mlm2 = smf.mixedlm(total_name+' ~ meanSodium + ChangeInICP', scale_ICP_Na_df.dropna(subset=['meanSodium','ChangeInICP']), groups=scale_ICP_Na_df.dropna(subset=['meanSodium','ChangeInICP'])["GUPI"]).fit()
+    curr_mlm3 = smf.mixedlm(total_name+' ~ ChangeInSodium + ICPmean', scale_ICP_Na_df.dropna(subset=['ChangeInSodium','ICPmean']), groups=scale_ICP_Na_df.dropna(subset=['ChangeInSodium','ICPmean'])["GUPI"]).fit()
+    curr_mlm4 = smf.mixedlm(total_name+' ~ ChangeInSodium + ChangeInICP', scale_ICP_Na_df.dropna(subset=['ChangeInSodium','ChangeInICP']), groups=scale_ICP_Na_df.dropna(subset=['ChangeInSodium','ChangeInICP'])["GUPI"]).fit()
 
-    # Create dataframe to store relevant information
-    curr_total_df = pd.DataFrame({'Type':'TotalScore',
-                                    'Formula':total_name+' ~ meanSodium + ICPmean',
-                                    'Name':curr_mlm.params.index.tolist(),
-                                    'Coefficient':curr_mlm.params.tolist(),
-                                    'pvalues':curr_mlm.pvalues.tolist(),
-                                    'ResidVar':curr_mlm.scale,
-                                    'RandomEffectVar':float(curr_mlm.cov_re.iloc[0]),
-                                    'PredictedValueVar':curr_mlm.predict(scale_ICP_Na_df).var(),
-                                    'FittedValueVar':curr_mlm.fittedvalues.var(),
-                                    'LogLikelihood':curr_mlm.llf,
-                                    'count':scale_ICP_Na_df.shape[0],
-                                    'patient_count':scale_ICP_Na_df.GUPI.nunique()})
+    # Compile model information into dataframes
+    curr_mlm1_df = pd.DataFrame({'Type':'TotalScore',
+                                 'Formula':total_name+' ~ meanSodium + ICPmean',
+                                 'Name':curr_mlm1.params.index.tolist(),
+                                 'Coefficient':curr_mlm1.params.tolist(),
+                                 'pvalues':curr_mlm1.pvalues.tolist(),
+                                 'ResidVar':curr_mlm1.scale,
+                                 'RandomEffectVar':float(curr_mlm1.cov_re.iloc[0]),
+                                 'PredictedValueVar':curr_mlm1.predict(scale_ICP_Na_df).var(),
+                                 'FittedValueVar':curr_mlm1.fittedvalues.var(),
+                                 'LogLikelihood':curr_mlm1.llf,
+                                 'count':scale_ICP_Na_df.shape[0],
+                                 'patient_count':scale_ICP_Na_df.GUPI.nunique()})
+    
+    curr_mlm2_df = pd.DataFrame({'Type':'TotalScore',
+                                 'Formula':total_name+' ~ meanSodium + ChangeInICP',
+                                 'Name':curr_mlm2.params.index.tolist(),
+                                 'Coefficient':curr_mlm2.params.tolist(),
+                                 'pvalues':curr_mlm2.pvalues.tolist(),
+                                 'ResidVar':curr_mlm2.scale,
+                                 'RandomEffectVar':float(curr_mlm2.cov_re.iloc[0]),
+                                 'PredictedValueVar':curr_mlm2.predict(scale_ICP_Na_df).var(),
+                                 'FittedValueVar':curr_mlm2.fittedvalues.var(),
+                                 'LogLikelihood':curr_mlm2.llf,
+                                 'count':scale_ICP_Na_df.dropna(subset=['meanSodium','ChangeInICP']).shape[0],
+                                 'patient_count':scale_ICP_Na_df.dropna(subset=['meanSodium','ChangeInICP']).GUPI.nunique()})
+    
+    curr_mlm3_df = pd.DataFrame({'Type':'TotalScore',
+                                 'Formula':total_name+' ~ ChangeInSodium + ICPmean',
+                                 'Name':curr_mlm3.params.index.tolist(),
+                                 'Coefficient':curr_mlm3.params.tolist(),
+                                 'pvalues':curr_mlm3.pvalues.tolist(),
+                                 'ResidVar':curr_mlm3.scale,
+                                 'RandomEffectVar':float(curr_mlm3.cov_re.iloc[0]),
+                                 'PredictedValueVar':curr_mlm3.predict(scale_ICP_Na_df).var(),
+                                 'FittedValueVar':curr_mlm3.fittedvalues.var(),
+                                 'LogLikelihood':curr_mlm3.llf,
+                                 'count':scale_ICP_Na_df.dropna(subset=['ChangeInSodium','ICPmean']).shape[0],
+                                 'patient_count':scale_ICP_Na_df.dropna(subset=['ChangeInSodium','ICPmean']).GUPI.nunique()})
+
+    curr_mlm4_df = pd.DataFrame({'Type':'TotalScore',
+                                 'Formula':total_name+' ~ ChangeInSodium + ChangeInICP',
+                                 'Name':curr_mlm4.params.index.tolist(),
+                                 'Coefficient':curr_mlm4.params.tolist(),
+                                 'pvalues':curr_mlm4.pvalues.tolist(),
+                                 'ResidVar':curr_mlm4.scale,
+                                 'RandomEffectVar':float(curr_mlm4.cov_re.iloc[0]),
+                                 'PredictedValueVar':curr_mlm4.predict(scale_ICP_Na_df).var(),
+                                 'FittedValueVar':curr_mlm4.fittedvalues.var(),
+                                 'LogLikelihood':curr_mlm4.llf,
+                                 'count':scale_ICP_Na_df.dropna(subset=['ChangeInSodium','ChangeInICP']).shape[0],
+                                 'patient_count':scale_ICP_Na_df.dropna(subset=['ChangeInSodium','ChangeInICP']).GUPI.nunique()})
     
     # Return MELM information dataframe
-    return(curr_total_df)
+    return(pd.concat([curr_mlm1_df,curr_mlm2_df,curr_mlm3_df,curr_mlm4_df],ignore_index=True))
+
+# Function to calculate unique mixed effect models for sodium regressed on HTS and ICP
+def calc_HTS_Na_melm(scale_HTS_Na_df):
+
+    # Calculate current melm
+    curr_mlm1 = smf.mixedlm('meanSodium ~ ICPmean + C(Hypertonic,Treatment)', scale_HTS_Na_df.dropna(subset=['Hypertonic','meanSodium','ICPmean']), groups=scale_HTS_Na_df.dropna(subset=['Hypertonic','meanSodium','ICPmean'])["GUPI"]).fit()
+    curr_mlm2 = smf.mixedlm('meanSodium ~ ChangeInICP + C(Hypertonic,Treatment)', scale_HTS_Na_df.dropna(subset=['Hypertonic','meanSodium','ChangeInICP']), groups=scale_HTS_Na_df.dropna(subset=['Hypertonic','meanSodium','ChangeInICP'])["GUPI"]).fit()
+    curr_mlm3 = smf.mixedlm('ChangeInSodium ~ ICPmean + C(Hypertonic,Treatment)', scale_HTS_Na_df.dropna(subset=['Hypertonic','ChangeInSodium','ICPmean']), groups=scale_HTS_Na_df.dropna(subset=['Hypertonic','ChangeInSodium','ICPmean'])["GUPI"]).fit()
+    curr_mlm4 = smf.mixedlm('ChangeInSodium ~ ChangeInICP + C(Hypertonic,Treatment)', scale_HTS_Na_df.dropna(subset=['Hypertonic','ChangeInSodium','ChangeInICP']), groups=scale_HTS_Na_df.dropna(subset=['Hypertonic','ChangeInSodium','ChangeInICP'])["GUPI"]).fit()
+
+    # Compile model information into dataframes
+    curr_mlm1_df = pd.DataFrame({'Type':'TotalScore',
+                                 'Formula':'meanSodium ~ ICPmean + C(Hypertonic,Treatment)',
+                                 'Name':curr_mlm1.params.index.tolist(),
+                                 'Coefficient':curr_mlm1.params.tolist(),
+                                 'pvalues':curr_mlm1.pvalues.tolist(),
+                                 'ResidVar':curr_mlm1.scale,
+                                 'RandomEffectVar':float(curr_mlm1.cov_re.iloc[0]),
+                                 'PredictedValueVar':curr_mlm1.predict(scale_HTS_Na_df).var(),
+                                 'FittedValueVar':curr_mlm1.fittedvalues.var(),
+                                 'LogLikelihood':curr_mlm1.llf,
+                                 'count':scale_HTS_Na_df.dropna(subset=['Hypertonic','meanSodium','ICPmean']).shape[0],
+                                 'patient_count':scale_HTS_Na_df.dropna(subset=['Hypertonic','meanSodium','ICPmean']).GUPI.nunique()})
+    
+    curr_mlm2_df = pd.DataFrame({'Type':'TotalScore',
+                                 'Formula':'meanSodium ~ ChangeInICP + C(Hypertonic,Treatment)',
+                                 'Name':curr_mlm2.params.index.tolist(),
+                                 'Coefficient':curr_mlm2.params.tolist(),
+                                 'pvalues':curr_mlm2.pvalues.tolist(),
+                                 'ResidVar':curr_mlm2.scale,
+                                 'RandomEffectVar':float(curr_mlm2.cov_re.iloc[0]),
+                                 'PredictedValueVar':curr_mlm2.predict(scale_HTS_Na_df).var(),
+                                 'FittedValueVar':curr_mlm2.fittedvalues.var(),
+                                 'LogLikelihood':curr_mlm2.llf,
+                                 'count':scale_HTS_Na_df.dropna(subset=['Hypertonic','meanSodium','ChangeInICP']).shape[0],
+                                 'patient_count':scale_HTS_Na_df.dropna(subset=['Hypertonic','meanSodium','ChangeInICP']).GUPI.nunique()})
+    
+    curr_mlm3_df = pd.DataFrame({'Type':'TotalScore',
+                                 'Formula':'ChangeInSodium ~ ICPmean + C(Hypertonic,Treatment)',
+                                 'Name':curr_mlm3.params.index.tolist(),
+                                 'Coefficient':curr_mlm3.params.tolist(),
+                                 'pvalues':curr_mlm3.pvalues.tolist(),
+                                 'ResidVar':curr_mlm3.scale,
+                                 'RandomEffectVar':float(curr_mlm3.cov_re.iloc[0]),
+                                 'PredictedValueVar':curr_mlm3.predict(scale_HTS_Na_df).var(),
+                                 'FittedValueVar':curr_mlm3.fittedvalues.var(),
+                                 'LogLikelihood':curr_mlm3.llf,
+                                 'count':scale_HTS_Na_df.dropna(subset=['Hypertonic','ChangeInSodium','ICPmean']).shape[0],
+                                 'patient_count':scale_HTS_Na_df.dropna(subset=['Hypertonic','ChangeInSodium','ICPmean']).GUPI.nunique()})
+
+    curr_mlm4_df = pd.DataFrame({'Type':'TotalScore',
+                                 'Formula':'ChangeInSodium ~ ChangeInICP + C(Hypertonic,Treatment)',
+                                 'Name':curr_mlm4.params.index.tolist(),
+                                 'Coefficient':curr_mlm4.params.tolist(),
+                                 'pvalues':curr_mlm4.pvalues.tolist(),
+                                 'ResidVar':curr_mlm4.scale,
+                                 'RandomEffectVar':float(curr_mlm4.cov_re.iloc[0]),
+                                 'PredictedValueVar':curr_mlm4.predict(scale_HTS_Na_df).var(),
+                                 'FittedValueVar':curr_mlm4.fittedvalues.var(),
+                                 'LogLikelihood':curr_mlm4.llf,
+                                 'count':scale_HTS_Na_df.dropna(subset=['Hypertonic','ChangeInSodium','ChangeInICP']).shape[0],
+                                 'patient_count':scale_HTS_Na_df.dropna(subset=['Hypertonic','ChangeInSodium','ChangeInICP']).GUPI.nunique()})
+    
+    # Return MELM information dataframe
+    return(pd.concat([curr_mlm1_df,curr_mlm2_df,curr_mlm3_df,curr_mlm4_df],ignore_index=True))
+
+# Function to calculate mutual information and entropy between TIL scores and TILBasic
+def calc_MI_entropy(curr_rs,scores_df,max_df,progress_bar=True,progress_bar_desc=''):
+
+    compiled_MI_entropy_df = []
+        
+    if progress_bar:
+        iterator = tqdm(curr_rs,desc=progress_bar_desc)
+    else:
+        iterator = curr_rs
+        
+    # Iterate through resamples
+    for rs in iterator:
+
+        # Filter each dataframe by current resample
+        curr_rs_scores = scores_df[scores_df.GUPI.isin(rs)].reset_index(drop=True)
+        curr_rs_max = max_df[max_df.GUPI.isin(rs)].reset_index(drop=True)
+
+        # Calculate mutual information and entropy for daily TIL scores
+        s = curr_rs_scores.groupby('TILTimepoint',as_index=True).apply(lambda dfx: _estimate_mi(dfx[['TotalSum','uwTILSum','PILOTSum','TIL_1987Sum','TIL_Basic']].values,dfx['TIL_Basic'].values,True,True)) 
+        daily_mi = pd.DataFrame.from_dict(dict(zip(s.index, s.values)),orient='index',columns=['TotalSum','uwTILSum','PILOTSum','TIL_1987Sum','TIL_Basic'])
+        daily_mi.insert(0,'TILTimepoint',daily_mi.index.values)
+        daily_mi.insert(1,'METRIC','MutualInfo')
+        daily_entropy = curr_rs_scores.groupby('TILTimepoint',as_index=False).apply(lambda dfx: dfx[['TotalSum','uwTILSum','PILOTSum','TIL_1987Sum','TIL_Basic']].apply(lambda x: stats.entropy(x.value_counts().values/x.count()))) 
+        daily_entropy.insert(1,'METRIC','Entropy')
+
+        # Calculate mutual information and entropy for max TIL scores
+        max_mi = pd.DataFrame([_estimate_mi(curr_rs_max[['TILmax','uwTILmax','PILOTmax','TIL_1987max','TIL_Basicmax']].values,curr_rs_max['TIL_Basicmax'].values,True,True)],columns=['TotalSum','uwTILSum','PILOTSum','TIL_1987Sum','TIL_Basic'])
+        max_mi.insert(0,'TILTimepoint','Max')
+        max_mi.insert(1,'METRIC','MutualInfo')
+        max_entropy = pd.DataFrame([curr_rs_max[['TILmax','uwTILmax','PILOTmax','TIL_1987max','TIL_Basicmax']].apply(lambda x: stats.entropy(x.value_counts().values/x.count())).values],columns=['TotalSum','uwTILSum','PILOTSum','TIL_1987Sum','TIL_Basic'])
+        max_entropy.insert(0,'TILTimepoint','Max')
+        max_entropy.insert(1,'METRIC','Entropy')
+
+        # Append current daily/max mutual information and entropy to running list
+        compiled_MI_entropy_df.append(pd.concat([daily_mi,daily_entropy,max_mi,max_entropy],ignore_index=True))
+
+    # Return concatenated list of mutual information and entropy dataframes
+    return(pd.concat(compiled_MI_entropy_df,ignore_index=True))
+
+# Function to calculate AUC for each score-label combination
+def calc_AUC(curr_rs,max_df,score_cols,label_cols,progress_bar=True,progress_bar_desc=''):
+
+    calc_AUC_df = []
+    
+    if progress_bar:
+        iterator = tqdm(curr_rs,desc=progress_bar_desc)
+    else:
+        iterator = curr_rs
+
+    # Convert dataframe to long form
+    long_max_df = max_df.melt(id_vars=['GUPI']+label_cols,value_vars=score_cols,var_name='Scale',value_name='ScaleScore')
+
+    # Convert labels to long form
+    long_max_df = long_max_df.melt(id_vars=['GUPI','Scale','ScaleScore'],value_vars=label_cols,var_name='Label',value_name='LabelScore')
+
+    # Iterate through resamples
+    for rs in iterator:
+
+        # Filter each dataframe by current resample
+        curr_rs_max = long_max_df[long_max_df.GUPI.isin(rs)].reset_index(drop=True)
+
+        # Calculate AUC for every scale-label combination
+        curr_AUCs = curr_rs_max.groupby(['Scale','Label'],as_index=False).apply(lambda dfx: roc_auc_score(dfx.LabelScore,dfx.ScaleScore)).rename(columns={None:'AUC'})
+
+        # Append to running list
+        calc_AUC_df.append(curr_AUCs)
+    
+    # Concatenate dataframe and return
+    return(pd.concat(calc_AUC_df,ignore_index=True))
+
+# Define function to calculate MCC and accuracy for daily-4-hourly concordance check
+def calc_MCC_accuracy(curr_rs,delta_df,progress_bar=True,progress_bar_desc=''):
+
+    compiled_MCC_accuracy_df = []
+        
+    if progress_bar:
+        iterator = tqdm(curr_rs,desc=progress_bar_desc)
+    else:
+        iterator = curr_rs
+        
+    # Iterate through resamples
+    for rs in iterator:
+
+        # Filter each dataframe by current resample
+        curr_rs_deltas = delta_df[(delta_df.GUPI.isin(rs))&(delta_df.Ambiguous==0)].reset_index(drop=True)
+
+        # Calculate increase MCC and accuracy
+        increase_mcc = matthews_corrcoef(curr_rs_deltas['DailyIncreaseTIL'],curr_rs_deltas['4HourlyIncreaseTIL'])
+        increase_accuracy = accuracy_score(curr_rs_deltas['DailyIncreaseTIL'],curr_rs_deltas['4HourlyIncreaseTIL'])
+
+        # Calculate decrease MCC and accuracy
+        decrease_mcc = matthews_corrcoef(curr_rs_deltas['DailyDecreaseTIL'],curr_rs_deltas['4HourlyDecreaseTIL'])
+        decrease_accuracy = accuracy_score(curr_rs_deltas['DailyDecreaseTIL'],curr_rs_deltas['4HourlyDecreaseTIL'])
+
+        # Compile scores into a single dataframe
+        curr_df = pd.DataFrame({'TILChange':['Increase','Increase','Decrease','Decrease'],'Metric':['MCC','Accuracy','MCC','Accuracy'],'Value':[increase_mcc,increase_accuracy,decrease_mcc,decrease_accuracy]})
+
+        # Append current dataframe to running list
+        compiled_MCC_accuracy_df.append(curr_df)
+
+    # Return compiled dataframe
+    return (pd.concat(compiled_MCC_accuracy_df,ignore_index=True))

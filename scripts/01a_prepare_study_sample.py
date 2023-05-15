@@ -432,6 +432,10 @@ n_lo_res_info = pd.pivot_table(mean_daily_hourly_info, values = 'n', index=['GUP
 # Combine mean and count dataframes
 lo_res_info = mean_lo_res_info.merge(n_lo_res_info,how='inner')
 
+# Calculate day-by-day differences in ICP and CPP
+lo_res_info['ChangeInCPP'] = lo_res_info.groupby(['GUPI'])['CPPmean'].diff()
+lo_res_info['ChangeInICP'] = lo_res_info.groupby(['GUPI'])['ICPmean'].diff()
+
 # Merge hourly ICP and CPP values with daily TIL
 lo_res_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(lo_res_info,how='inner')
 
@@ -440,10 +444,12 @@ lo_res_info.to_csv('../formatted_data/formatted_low_resolution_values.csv',index
 
 ## Calculate means and maxes
 # Filter to only keep values from the first week
-first_week_lo_res_info = lo_res_info[lo_res_info.TILTimepoint<=7].reset_index(drop=True)
+first_week_lo_res_info = lo_res_info[lo_res_info.TILTimepoint<=7].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
 
 # Calculate ICPmean, CPPmean, ICPmax, and CPPmax
-lo_res_maxes_means = first_week_lo_res_info.groupby('GUPI',as_index=False).ICPmean.aggregate({'ICPmean':'mean','ICPmax':'max'}).merge(first_week_lo_res_info.groupby('GUPI',as_index=False).CPPmean.aggregate({'CPPmean':'mean','CPPmax':'max'}),how='left')
+lo_res_maxes_means = first_week_lo_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'mean':'mean','max':'max'})
+lo_res_maxes_means = pd.pivot_table(lo_res_maxes_means, values = ['mean','max'], index=['GUPI'], columns = 'variable').reset_index()
+lo_res_maxes_means.columns = [col[1]+col[0] for col in lo_res_maxes_means.columns.values]
 
 # Save ICPmean, CPPmean, ICPmax, and CPPmax
 lo_res_maxes_means.to_csv('../formatted_data/formatted_low_resolution_maxes_means.csv',index=False)
@@ -486,6 +492,10 @@ hi_res_info['TILDate'] = pd.to_datetime(hi_res_info['TimeStamp'].dt.date)
 # Drop duplicate rows
 hi_res_info = hi_res_info[['GUPI','TILDate','ICP_mean','CPP_mean','ICP_n','CPP_n','EVD']].drop_duplicates(ignore_index=True)
 
+# Calculate day-by-day differences in ICP and CPP
+hi_res_info['ChangeInCPP'] = hi_res_info.groupby(['GUPI'])['CPP_mean'].diff()
+hi_res_info['ChangeInICP'] = hi_res_info.groupby(['GUPI'])['ICP_mean'].diff()
+
 # Merge hi-resolution ICP and CPP values with daily TIL
 hi_res_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(hi_res_info,how='inner').rename(columns={'ICP_mean':'ICPmean','CPP_mean':'CPPmean','ICP_n':'nICP','CPP_n':'nCPP'})
 
@@ -494,10 +504,12 @@ hi_res_info.to_csv('../formatted_data/formatted_high_resolution_values.csv',inde
 
 ## Calculate means and maxes
 # Filter to only keep values from the first week
-first_week_hi_res_info = hi_res_info[hi_res_info.TILTimepoint<=7].reset_index(drop=True)
+first_week_hi_res_info = hi_res_info[hi_res_info.TILTimepoint<=7].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
 
 # Calculate ICPmean, CPPmean, ICPmax, and CPPmax
-hi_res_maxes_means = first_week_hi_res_info.groupby('GUPI',as_index=False).ICPmean.aggregate({'ICPmean':'mean','ICPmax':'max'}).merge(first_week_hi_res_info.groupby('GUPI',as_index=False).CPPmean.aggregate({'CPPmean':'mean','CPPmax':'max'}),how='left')
+hi_res_maxes_means = first_week_hi_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'mean':'mean','max':'max'})
+hi_res_maxes_means = pd.pivot_table(hi_res_maxes_means, values = ['mean','max'], index=['GUPI'], columns = 'variable').reset_index()
+hi_res_maxes_means.columns = [col[1]+col[0] for col in hi_res_maxes_means.columns.values]
 
 # Save ICPmean, CPPmean, ICPmax, and CPPmax
 hi_res_maxes_means.to_csv('../formatted_data/formatted_high_resolution_maxes_means.csv',index=False)
@@ -655,7 +667,7 @@ pilot_mean_info.to_csv('../formatted_data/formatted_PILOT_mean.csv',index=False)
 til_1987_mean_info.to_csv('../formatted_data/formatted_TIL_1987_mean.csv',index=False)
 til_basic_mean_info.to_csv('../formatted_data/formatted_TIL_Basic_mean.csv',index=False)
 
-### VII. Load and prepare serum sodium values from CENTER-TBI
+### IX. Load and prepare serum sodium values from CENTER-TBI
 ## Load and prepare sodium values
 # Load sodium lab values
 sodium_values = pd.read_csv('../CENTER-TBI/Labs/data.csv',na_values = ["NA","NaN"," ", ""])[['GUPI','DLDate','DLTime','DLSodiummmolL']].dropna(subset=['DLDate','DLSodiummmolL'],how='any').sort_values(by=['GUPI','DLDate']).reset_index(drop=True)
@@ -666,6 +678,9 @@ sodium_values['TILDate'] = pd.to_datetime(sodium_values['DLDate'],format = '%Y-%
 # Calculate daily mean sodium
 sodium_values = sodium_values.groupby(['GUPI','TILDate'],as_index=False).DLSodiummmolL.aggregate({'meanSodium':'mean','nSodium':'count'})
 
+# Calculate daily difference in sodium
+sodium_values['ChangeInSodium'] = sodium_values.groupby(['GUPI'])['meanSodium'].diff()
+
 # Load formatted TIL values and add row index
 formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
 
@@ -674,8 +689,18 @@ formatted_TIL_scores['TILDate'] = pd.to_datetime(formatted_TIL_scores['TILDate']
 formatted_TIL_scores['ICUAdmTimeStamp'] = pd.to_datetime(formatted_TIL_scores['ICUAdmTimeStamp'],format = '%Y-%m-%d %H:%M:%S')
 formatted_TIL_scores['ICUDischTimeStamp'] = pd.to_datetime(formatted_TIL_scores['ICUDischTimeStamp'],format = '%Y-%m-%d %H:%M:%S')
 
+# Create a list of patients who received hypertonic saline or did not receive hyperosmolar therapy at all
+HTS_GUPIs = formatted_TIL_scores[formatted_TIL_scores.Hypertonic!=0].GUPI.unique()
+Mannitol_GUPIs = formatted_TIL_scores[formatted_TIL_scores.Mannitol!=0].GUPI.unique()
+nonHOT_GUPIs = np.setdiff1d(formatted_TIL_scores.GUPI,np.union1d(HTS_GUPIs,Mannitol_GUPIs))
+
 # Merge sodium values to formatted TIL dataframe
 sodium_TIL_dataframe = formatted_TIL_scores.merge(sodium_values,how='left')
+
+# Add columns to indicate hyperosmolar treatment stratification
+sodium_TIL_dataframe['HTSPtInd'] = sodium_TIL_dataframe.GUPI.isin(HTS_GUPIs).astype(int)
+sodium_TIL_dataframe['NoHyperosmolarPtInd'] = sodium_TIL_dataframe.GUPI.isin(nonHOT_GUPIs).astype(int)
+sodium_TIL_dataframe['MannitolPtInd'] = sodium_TIL_dataframe.GUPI.isin(Mannitol_GUPIs).astype(int)
 
 # Remove rows with missing sodium values
 sodium_TIL_dataframe = sodium_TIL_dataframe.dropna(subset='meanSodium').drop_duplicates(ignore_index=True)
@@ -690,5 +715,16 @@ first_week_sodium_info = sodium_TIL_dataframe[sodium_TIL_dataframe.TILTimepoint<
 # Calculate meanSodium and maxSodium
 sodium_maxes_means = first_week_sodium_info.groupby('GUPI',as_index=False).meanSodium.aggregate({'meanSodium':'mean','maxSodium':'max'})
 
+# Calculate deltas meanSodium and maxSodium
+deltas_sodium_maxes_means = first_week_sodium_info.groupby('GUPI',as_index=False).ChangeInSodium.aggregate({'meanChangeSodium':'mean','maxChangeSodium':'max'})
+
 # Save meanSodium and maxSodium
+sodium_maxes_means = sodium_maxes_means.merge(deltas_sodium_maxes_means,how='left')
+
+# Add columns to indicate hyperosmolar treatment stratification
+sodium_maxes_means['HTSPtInd'] = sodium_maxes_means.GUPI.isin(HTS_GUPIs).astype(int)
+sodium_maxes_means['NoHyperosmolarPtInd'] = sodium_maxes_means.GUPI.isin(nonHOT_GUPIs).astype(int)
+sodium_maxes_means['MannitolPtInd'] = sodium_maxes_means.GUPI.isin(Mannitol_GUPIs).astype(int)
+
+# Save values
 sodium_maxes_means.to_csv('../formatted_data/formatted_sodium_maxes_means.csv',index=False)

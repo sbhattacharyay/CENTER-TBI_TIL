@@ -116,7 +116,6 @@ def main(array_task_id):
     raw_formatted_TIL_Basic_mean = pd.read_csv('../formatted_data/formatted_TIL_Basic_mean.csv')
     raw_formatted_uwTIL_mean = pd.pivot_table(raw_formatted_uwTIL_scores.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'uwTILSum':'uwTILmean'})
     raw_combined_mean_scores = raw_formatted_TIL_mean[['GUPI','TILmean']].merge(raw_formatted_TIL_1987_mean[['GUPI','TIL_1987mean']]).merge(raw_formatted_PILOT_mean[['GUPI','PILOTmean']]).merge(raw_formatted_TIL_Basic_mean[['GUPI','TIL_Basicmean']]).merge(raw_formatted_uwTIL_mean[['GUPI','uwTILmean']])
-    raw_combined_mean_scores = raw_formatted_TIL_mean[['GUPI','TILmean']].merge(raw_formatted_TIL_1987_mean[['GUPI','TIL_1987mean']]).merge(raw_formatted_PILOT_mean[['GUPI','PILOTmean']]).merge(raw_formatted_TIL_Basic_mean[['GUPI','TIL_Basicmean']]).merge(raw_formatted_uwTIL_mean[['GUPI','uwTILmean']])
 
     # Combine raw mean and max dataframes
     raw_combined_max_mean_scores = raw_combined_max_scores.merge(raw_combined_mean_scores,how='inner')
@@ -267,15 +266,15 @@ def main(array_task_id):
     TIL_1987_components = ['Sedation', 'Mannitol', 'Ventricular', 'Hyperventilation', 'Paralysis']
 
     # Calculate low-resolution mixed effect models
-    TIL_lo_res_mlm = calc_melm(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TotalSum',False,TIL_components,'Calculating ICP_EH ~ TIL')
+    TIL_lo_res_mlm = calc_melm(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TotalSum',False,TIL_components,'Calculating ICP_EH ~ TIL')
     TIL_lo_res_mlm['Scale'] = 'TIL'
-    PILOT_lo_res_mlm = calc_melm(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'PILOTSum',False,PILOT_components,'Calculating ICP_EH ~ PILOT')
+    PILOT_lo_res_mlm = calc_melm(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'PILOTSum',False,PILOT_components,'Calculating ICP_EH ~ PILOT')
     PILOT_lo_res_mlm['Scale'] = 'PILOT'
-    TIL_1987_lo_res_mlm = calc_melm(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TIL_1987Sum',False,TIL_1987_components,'Calculating ICP_EH ~ TIL_1987')
+    TIL_1987_lo_res_mlm = calc_melm(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TIL_1987Sum',False,TIL_1987_components,'Calculating ICP_EH ~ TIL_1987')
     TIL_1987_lo_res_mlm['Scale'] = 'TIL_1987'
-    TIL_Basic_lo_res_mlm = calc_melm(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TIL_Basic',False,[],'Calculating ICP_EH ~ TIL_Basic')
+    TIL_Basic_lo_res_mlm = calc_melm(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TIL_Basic',False,[],'Calculating ICP_EH ~ TIL_Basic')
     TIL_Basic_lo_res_mlm['Scale'] = 'TIL_Basic'
-    uwTIL_lo_res_mlm = calc_melm(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'uwTILSum',True,TIL_components,'Calculating ICP_EH ~ uwTIL')
+    uwTIL_lo_res_mlm = calc_melm(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'uwTILSum',True,TIL_components,'Calculating ICP_EH ~ uwTIL')
     uwTIL_lo_res_mlm['Scale'] = 'uwTIL'
     compiled_lo_res_mlm = pd.concat([TIL_lo_res_mlm,PILOT_lo_res_mlm,TIL_1987_lo_res_mlm,TIL_Basic_lo_res_mlm,uwTIL_lo_res_mlm],ignore_index=True)
     compiled_lo_res_mlm['Population'] = 'TIL-ICP_EH'
