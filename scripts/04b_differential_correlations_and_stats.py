@@ -1,4 +1,4 @@
-#### Master Script 2b: Calculate TIL correlations and statistics of different study sub-samples ####
+#### Master Script 4b: Calculate TIL correlations and statistics of different study sub-samples ####
 #
 # Shubhayu Bhattacharyay
 # University of Cambridge

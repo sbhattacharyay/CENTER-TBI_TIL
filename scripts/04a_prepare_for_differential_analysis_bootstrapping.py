@@ -1,4 +1,4 @@
-#### Master Script 2a: Prepare study resamples for bootstrapping TIL-based statistics ####
+#### Master Script 4a: Prepare study resamples for bootstrapping TIL-based statistics ####
 #
 # Shubhayu Bhattacharyay
 # University of Cambridge

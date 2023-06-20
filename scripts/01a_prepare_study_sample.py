@@ -62,6 +62,12 @@ CENTER_TBI_datetime = CENTER_TBI_demo_info.merge(CENTER_TBI_datetime,how='right'
 # Apply inclusion criteria no. 1: age >= 16
 CENTER_TBI_datetime = CENTER_TBI_datetime[CENTER_TBI_datetime.Age >= 16].reset_index(drop=True)
 
+# Load list of ICP-monitored patients
+icp_monitored_patients = pd.read_csv('../CENTER-TBI/ICP_monitored_patients.csv')
+
+# Apply inclusion criteria no. 2: ICP monitored during ICU stay
+CENTER_TBI_datetime = CENTER_TBI_datetime[CENTER_TBI_datetime.GUPI.isin(icp_monitored_patients.GUPI)].reset_index(drop=True)
+
 ## Load and prepare TIL information
 # Load DailyTIL dataframe
 daily_TIL_info = pd.read_csv('../CENTER-TBI/DailyTIL/data.csv',na_values = ["NA","NaN"," ", ""])
@@ -73,8 +79,8 @@ daily_TIL_info = daily_TIL_info[(daily_TIL_info.TILTimepoint!='None')|(~daily_TI
 true_var_columns = daily_TIL_info.columns.difference(['GUPI', 'TILTimepoint', 'TILDate', 'TILTime','DailyTILCompleteStatus','TotalTIL','TILFluidCalcStartDate','TILFluidCalcStartTime','TILFluidCalcStopDate','TILFluidCalcStopTime'])
 daily_TIL_info = daily_TIL_info.dropna(axis=1,how='all').dropna(subset=true_var_columns,how='all').reset_index(drop=True)
 
-# Remove all TIL entries marked as "Not Performed"
-daily_TIL_info = daily_TIL_info[daily_TIL_info.DailyTILCompleteStatus!='INCPT']
+# Remove all TIL entries marked as "Not Performed" or "Not Started"
+daily_TIL_info = daily_TIL_info[~daily_TIL_info.DailyTILCompleteStatus.isin(['INCPT','NOSTART'])]
 
 # Convert dates from string to date format
 daily_TIL_info.TILDate = pd.to_datetime(daily_TIL_info.TILDate,format = '%Y-%m-%d')
@@ -182,7 +188,7 @@ mod_daily_TIL_info = mod_daily_TIL_info.merge(CENTER_TBI_WLST_patients.rename(co
 # Fill in missing dummy-WLST markers
 mod_daily_TIL_info.WLST = mod_daily_TIL_info.WLST.fillna(0)
 
-# Filter out columns in which TILDate occurs during or after WLST decision
+# Apply inclusion criteria no. 3 and 4: Filter out columns in which WLST decision happened within 24 hours of ICU admission and filter out columns for whom TIL is unavailable
 mod_daily_TIL_info = mod_daily_TIL_info[(mod_daily_TIL_info.TILDate<mod_daily_TIL_info.WLSTDateComponent)|(mod_daily_TIL_info.WLST==0)].reset_index(drop=True)
 
 ## First, fix missing instances of decompressive craniectomy documented elsewhere
@@ -293,13 +299,7 @@ for curr_GUPI in tqdm(gupis_with_refract_DecomCranectomy, 'Fixing TotalTIL and r
 
 ## Carefully recalculate TILsum and get each true item of TIL
 # Apply custom function
-recalc_daily_TIL_info = calculate_TILsum(mod_daily_TIL_info)
-
-# Load ICP-monitored patients
-icp_monitored_patients = pd.read_csv('../CENTER-TBI/ICP_monitored_patients.csv')
-
-# Filter TIL scores to only ICP-monitored patients
-recalc_daily_TIL_info = recalc_daily_TIL_info[recalc_daily_TIL_info.GUPI.isin(icp_monitored_patients.GUPI)].sort_values(by=['GUPI','TILTimepoint','TILDate'],ignore_index=True)
+recalc_daily_TIL_info = calculate_TILsum(mod_daily_TIL_info).sort_values(['GUPI','TILTimepoint'],ignore_index=True)
 
 # Save modified Daily TIL dataframes in new directory
 os.makedirs('../formatted_data/',exist_ok=True)
@@ -316,6 +316,7 @@ unweighted_daily_TIL_info['Neuromuscular'] = unweighted_daily_TIL_info['Neuromus
 unweighted_daily_TIL_info['Sedation'] = unweighted_daily_TIL_info['Sedation'].rank(method='dense') - 1
 unweighted_daily_TIL_info['Temperature'] = unweighted_daily_TIL_info['Temperature'].rank(method='dense') - 1
 unweighted_daily_TIL_info['Ventilation'] = unweighted_daily_TIL_info['Ventilation'].rank(method='dense') - 1
+unweighted_daily_TIL_info['uwTILSum'] = unweighted_daily_TIL_info.CSFDrainage + unweighted_daily_TIL_info.DecomCraniectomy + unweighted_daily_TIL_info.FluidLoading + unweighted_daily_TIL_info.Hypertonic + unweighted_daily_TIL_info.ICPSurgery + unweighted_daily_TIL_info.Mannitol + unweighted_daily_TIL_info.Neuromuscular + unweighted_daily_TIL_info.Positioning + unweighted_daily_TIL_info.Sedation + unweighted_daily_TIL_info.Temperature + unweighted_daily_TIL_info.Vasopressor + unweighted_daily_TIL_info.Ventilation
 
 # Save unweighted Daily TIL dataframe in new directory
 unweighted_daily_TIL_info.to_csv('../formatted_data/formatted_unweighted_TIL_scores.csv',index=False)
@@ -398,8 +399,13 @@ daily_hourly_info = pd.read_csv('../CENTER-TBI/DailyHourlyValues/data.csv',na_va
 # Filter patients for whom TIL values exist
 daily_hourly_info = daily_hourly_info[daily_hourly_info.GUPI.isin(recalc_daily_TIL_info.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
 
-# Remove all rows in which ICP or CPP is missing
-daily_hourly_info = daily_hourly_info[~(daily_hourly_info.HVICP.isna() & daily_hourly_info.HVCPP.isna())].reset_index(drop=True)
+# Remove all rows with NA for all data variable columns
+true_var_columns = daily_hourly_info.columns.difference(['GUPI', 'HourlyValueTimePoint', 'HVHour', 'HVDate','HVTime','HourlyValuesCompleteStatus'])
+daily_hourly_info = daily_hourly_info.dropna(axis=1,how='all').dropna(subset=true_var_columns,how='all').reset_index(drop=True)
+
+# Remove all rows in which assessment was not started or not performed
+daily_hourly_info = daily_hourly_info[(~daily_hourly_info.HourlyValuesCompleteStatus.isin(['INCPT','NOSTART']))|(~(daily_hourly_info.HVICP.isna() & daily_hourly_info.HVCPP.isna()))]
+# daily_hourly_info = daily_hourly_info[~(daily_hourly_info.HVICP.isna() & daily_hourly_info.HVCPP.isna())].reset_index(drop=True)
 
 # Remove all entries without date or `HourlyValueTimePoint`
 daily_hourly_info = daily_hourly_info[(daily_hourly_info.HourlyValueTimePoint!='None')|(~daily_hourly_info.HVDate.isna())].reset_index(drop=True)
@@ -420,14 +426,18 @@ for curr_GUPI in tqdm(daily_hourly_info.GUPI.unique(),'Fixing daily hourly dates
     daily_hourly_info.HVDate[(daily_hourly_info.GUPI==curr_GUPI)&(daily_hourly_info.HourlyValueTimePoint!='None')] = fixed_date_vector    
 
 # Select relevant columns and rename column to match TIL dataframe
-daily_hourly_info = daily_hourly_info[['GUPI','HVDate','HVHour','HVTime','HVICP','HVCPP']].rename(columns={'HVDate':'TILDate'})
+daily_hourly_info = daily_hourly_info[['GUPI','HVDate','HVHour','HVTime','HVICP','HVCPP','HVTILChangeReason','HourlyValueLevelICP','HourlyValueLevelABP','HourlyValueICPDiscontinued']].rename(columns={'HVDate':'TILDate'})
 
 # Calculate ICPmean and CPPmean from end-hour values
-mean_daily_hourly_info = daily_hourly_info.melt(id_vars=['GUPI','TILDate','HVHour','HVTime']).groupby(['GUPI','TILDate','variable'],as_index=False)['value'].aggregate({'mean':'mean','n':'count'})
+mean_daily_hourly_info = daily_hourly_info.melt(id_vars=['GUPI','TILDate','HVHour','HVTime'],value_vars=['HVICP','HVCPP']).groupby(['GUPI','TILDate','variable'],as_index=False)['value'].aggregate({'mean':'mean','n':'count'})
 
 # Widen dataframe per mean and count
 mean_lo_res_info = pd.pivot_table(mean_daily_hourly_info, values = 'mean', index=['GUPI','TILDate'], columns = 'variable').reset_index().rename(columns={'HVCPP':'CPPmean','HVICP':'ICPmean'})
 n_lo_res_info = pd.pivot_table(mean_daily_hourly_info, values = 'n', index=['GUPI','TILDate'], columns = 'variable').reset_index().rename(columns={'HVCPP':'nCPP','HVICP':'nICP'})
+
+# Take mode of meta-information and widen
+mode_daily_hourly_info = daily_hourly_info.melt(id_vars=['GUPI','TILDate','HVHour','HVTime'],value_vars=['HVTILChangeReason','HourlyValueLevelICP','HourlyValueLevelABP','HourlyValueICPDiscontinued']).dropna(subset='value').groupby(['GUPI','TILDate','variable'],as_index=False)['value'].aggregate({'mode':lambda x: x.mode()[0],'n':'count'})
+mode_lo_res_info = pd.pivot_table(mode_daily_hourly_info, values = 'mode', index=['GUPI','TILDate'], columns = 'variable').reset_index()
 
 # Combine mean and count dataframes
 lo_res_info = mean_lo_res_info.merge(n_lo_res_info,how='inner')
@@ -437,22 +447,59 @@ lo_res_info['ChangeInCPP'] = lo_res_info.groupby(['GUPI'])['CPPmean'].diff()
 lo_res_info['ChangeInICP'] = lo_res_info.groupby(['GUPI'])['ICPmean'].diff()
 
 # Merge hourly ICP and CPP values with daily TIL
-lo_res_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(lo_res_info,how='inner')
+lo_res_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(lo_res_info,how='outer').merge(mode_lo_res_info,how='left')
+
+# Determine GUPIs with missing timepoints
+none_GUPIs = lo_res_info[lo_res_info.TILTimepoint.isna()].GUPI.unique()
+
+# Iterate through 'None' GUPIs and impute missing timepoint values
+for curr_GUPI in none_GUPIs:
+    curr_GUPI_lo_res = lo_res_info[lo_res_info.GUPI==curr_GUPI].reset_index(drop=True)
+    non_missing_timepoint_mask = ~curr_GUPI_lo_res.TILTimepoint.isna()
+    if non_missing_timepoint_mask.sum() != 1:
+        curr_default_date = (curr_GUPI_lo_res.TILDate[non_missing_timepoint_mask] - pd.to_timedelta(curr_GUPI_lo_res.TILTimepoint.astype(float)[non_missing_timepoint_mask],unit='d')).mode()[0]
+    else:
+        curr_default_date = (curr_GUPI_lo_res.TILDate[non_missing_timepoint_mask] - timedelta(days=curr_GUPI_lo_res.TILTimepoint.astype(float)[non_missing_timepoint_mask].values[0])).mode()[0]
+    fixed_timepoints_vector = ((curr_GUPI_lo_res.TILDate - curr_default_date)/np.timedelta64(1,'D')).astype(int)
+    fixed_timepoints_vector.index=lo_res_info[lo_res_info.GUPI==curr_GUPI].index
+    lo_res_info.TILTimepoint[lo_res_info.GUPI==curr_GUPI] = fixed_timepoints_vector
+
+# Convert TILTimepoint variable from string to integer
+lo_res_info.TILTimepoint = lo_res_info.TILTimepoint.astype(int)
+
+# Sort dataframe
+lo_res_info = lo_res_info.sort_values(['GUPI','TILTimepoint'],ignore_index=True)
+
+## Add ICP/CPP monitoring stoppage information
+# Load preformatted ICP/CPP monitoring stoppage information
+icp_monitored_patients = pd.read_csv('../CENTER-TBI/ICP_monitored_patients.csv',na_values = ["NA","NaN"," ", ""])
+
+# Extract 'DateComponent' from ICP monitoring stoppage timestamp values
+icp_monitored_patients['ICPRemTimeStamp'] = pd.to_datetime(icp_monitored_patients['ICPRemTimeStamp'].str[:10],format = '%Y-%m-%d').dt.date
+icp_monitored_patients['ICPRevisionTimeStamp'] = pd.to_datetime(icp_monitored_patients['ICPRevisionTimeStamp'].str[:10],format = '%Y-%m-%d').dt.date
+
+# Merge ICP removal timestamp and ICP stoppage information to low-resolution neuromonitoring dataframe
+lo_res_info = lo_res_info.merge(icp_monitored_patients[['GUPI','ICPRemTimeStamp','ICPRevisionTimeStamp','ICUReasonICP','ICPDevice','ICUReasonForTypeICPMont','ICUReasonForTypeICPMontPare','ICUProblemsICP','ICUProblemsICPYes','ICUCatheterICP','ICPMonitorStop','ICPStopReason']],how='left')
+
+# Add indicators for ICP monitor removal and/or revision
+lo_res_info['ICPRemovedIndicator'] = (lo_res_info.TILDate[~lo_res_info.ICPRemTimeStamp.isna()]>lo_res_info.ICPRemTimeStamp[~lo_res_info.ICPRemTimeStamp.isna()]).astype(int)
+lo_res_info['ICPRevisedIndicator'] = (lo_res_info.TILDate[~lo_res_info.ICPRevisionTimeStamp.isna()]>lo_res_info.ICPRevisionTimeStamp[~lo_res_info.ICPRevisionTimeStamp.isna()]).astype(int)
+lo_res_info = lo_res_info.drop(columns=['ICPRemTimeStamp','ICPRevisionTimeStamp'])
 
 ## Save modified Daily hourly value dataframes in new directory
 lo_res_info.to_csv('../formatted_data/formatted_low_resolution_values.csv',index=False)
 
 ## Calculate means and maxes
 # Filter to only keep values from the first week
-first_week_lo_res_info = lo_res_info[lo_res_info.TILTimepoint<=7].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
+first_week_lo_res_info = lo_res_info[(lo_res_info.TILTimepoint<=7)&(~lo_res_info.TotalSum.isna())].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
 
 # Calculate ICPmean, CPPmean, ICPmax, and CPPmax
-lo_res_maxes_means = first_week_lo_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'mean':'mean','max':'max'})
-lo_res_maxes_means = pd.pivot_table(lo_res_maxes_means, values = ['mean','max'], index=['GUPI'], columns = 'variable').reset_index()
+lo_res_maxes_means = first_week_lo_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'mean':'mean','max':'max','median':'median'})
+lo_res_maxes_means = pd.pivot_table(lo_res_maxes_means, values = ['mean','median','max'], index=['GUPI'], columns = 'variable').reset_index()
 lo_res_maxes_means.columns = [col[1]+col[0] for col in lo_res_maxes_means.columns.values]
 
 # Save ICPmean, CPPmean, ICPmax, and CPPmax
-lo_res_maxes_means.to_csv('../formatted_data/formatted_low_resolution_maxes_means.csv',index=False)
+lo_res_maxes_means.to_csv('../formatted_data/formatted_low_resolution_maxes_medians_means.csv',index=False)
 
 ### V. Load and prepare high-resolution ICP and CPP information
 ## Load and prepare formatted daily TIL dataframe
@@ -466,6 +513,9 @@ recalc_daily_TIL_info.ICUDischTimeStamp = pd.to_datetime(recalc_daily_TIL_info.I
 ## Load and format high-resolution ICP/CPP summary values
 # Load high-resolution ICP/CPP summary values of same day as TIL assessments
 hi_res_info = pd.read_csv('../CENTER-TBI/HighResolution/til_same.csv',na_values = ["NA","NaN"," ", ""])
+
+# Filter patients for whom TIL values exist
+hi_res_info = hi_res_info[hi_res_info.GUPI.isin(recalc_daily_TIL_info.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
 
 # Filter columns of interest
 hi_res_info = hi_res_info[['GUPI','TimeStamp','TotalTIL','ICP_mean','CPP_mean','ICP_n','CPP_n']]
@@ -497,22 +547,59 @@ hi_res_info['ChangeInCPP'] = hi_res_info.groupby(['GUPI'])['CPP_mean'].diff()
 hi_res_info['ChangeInICP'] = hi_res_info.groupby(['GUPI'])['ICP_mean'].diff()
 
 # Merge hi-resolution ICP and CPP values with daily TIL
-hi_res_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(hi_res_info,how='inner').rename(columns={'ICP_mean':'ICPmean','CPP_mean':'CPPmean','ICP_n':'nICP','CPP_n':'nCPP'})
+hi_res_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(hi_res_info,how='outer').rename(columns={'ICP_mean':'ICPmean','CPP_mean':'CPPmean','ICP_n':'nICP','CPP_n':'nCPP'})
 
-## Save modified hi-resolution value dataframes in new directory
+# Determine GUPIs with missing timepoints
+none_GUPIs = hi_res_info[hi_res_info.TILTimepoint.isna()].GUPI.unique()
+
+# Iterate through 'None' GUPIs and impute missing timepoint values
+for curr_GUPI in none_GUPIs:
+    curr_GUPI_hi_res = hi_res_info[hi_res_info.GUPI==curr_GUPI].reset_index(drop=True)
+    non_missing_timepoint_mask = ~curr_GUPI_hi_res.TILTimepoint.isna()
+    if non_missing_timepoint_mask.sum() != 1:
+        curr_default_date = (curr_GUPI_hi_res.TILDate[non_missing_timepoint_mask] - pd.to_timedelta(curr_GUPI_hi_res.TILTimepoint.astype(float)[non_missing_timepoint_mask],unit='d')).mode()[0]
+    else:
+        curr_default_date = (curr_GUPI_hi_res.TILDate[non_missing_timepoint_mask] - timedelta(days=curr_GUPI_hi_res.TILTimepoint.astype(float)[non_missing_timepoint_mask].values[0])).mode()[0]
+    fixed_timepoints_vector = ((curr_GUPI_hi_res.TILDate - curr_default_date)/np.timedelta64(1,'D')).astype(int)
+    fixed_timepoints_vector.index=hi_res_info[hi_res_info.GUPI==curr_GUPI].index
+    hi_res_info.TILTimepoint[hi_res_info.GUPI==curr_GUPI] = fixed_timepoints_vector
+
+# Convert TILTimepoint variable from string to integer
+hi_res_info.TILTimepoint = hi_res_info.TILTimepoint.astype(int)
+
+# Sort dataframe
+hi_res_info = hi_res_info.sort_values(['GUPI','TILTimepoint'],ignore_index=True)
+
+## Add ICP/CPP monitoring stoppage information
+# Load preformatted ICP/CPP monitoring stoppage information
+icp_monitored_patients = pd.read_csv('../CENTER-TBI/ICP_monitored_patients.csv',na_values = ["NA","NaN"," ", ""])
+
+# Extract 'DateComponent' from ICP monitoring stoppage timestamp values
+icp_monitored_patients['ICPRemTimeStamp'] = pd.to_datetime(icp_monitored_patients['ICPRemTimeStamp'].str[:10],format = '%Y-%m-%d').dt.date
+icp_monitored_patients['ICPRevisionTimeStamp'] = pd.to_datetime(icp_monitored_patients['ICPRevisionTimeStamp'].str[:10],format = '%Y-%m-%d').dt.date
+
+# Merge ICP removal timestamp and ICP stoppage information to low-resolution neuromonitoring dataframe
+hi_res_info = hi_res_info.merge(icp_monitored_patients[['GUPI','ICPRemTimeStamp','ICPRevisionTimeStamp','ICUReasonICP','ICPDevice','ICUReasonForTypeICPMont','ICUReasonForTypeICPMontPare','ICUProblemsICP','ICUProblemsICPYes','ICUCatheterICP','ICPMonitorStop','ICPStopReason']],how='left')
+
+# Add indicators for ICP monitor removal and/or revision
+hi_res_info['ICPRemovedIndicator'] = (hi_res_info.TILDate[~hi_res_info.ICPRemTimeStamp.isna()]>hi_res_info.ICPRemTimeStamp[~hi_res_info.ICPRemTimeStamp.isna()]).astype(int)
+hi_res_info['ICPRevisedIndicator'] = (hi_res_info.TILDate[~hi_res_info.ICPRevisionTimeStamp.isna()]>hi_res_info.ICPRevisionTimeStamp[~hi_res_info.ICPRevisionTimeStamp.isna()]).astype(int)
+hi_res_info = hi_res_info.drop(columns=['ICPRemTimeStamp','ICPRevisionTimeStamp'])
+
+## Save modified Daily hourly value dataframes in new directory
 hi_res_info.to_csv('../formatted_data/formatted_high_resolution_values.csv',index=False)
 
-## Calculate means and maxes
+## Calculate means, medians, and maxes
 # Filter to only keep values from the first week
-first_week_hi_res_info = hi_res_info[hi_res_info.TILTimepoint<=7].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
+first_week_hi_res_info = hi_res_info[(hi_res_info.TILTimepoint<=7)&(~hi_res_info.TotalSum.isna())].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
 
 # Calculate ICPmean, CPPmean, ICPmax, and CPPmax
-hi_res_maxes_means = first_week_hi_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'mean':'mean','max':'max'})
-hi_res_maxes_means = pd.pivot_table(hi_res_maxes_means, values = ['mean','max'], index=['GUPI'], columns = 'variable').reset_index()
+hi_res_maxes_means = first_week_hi_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'mean':'mean','max':'max','median':'median'})
+hi_res_maxes_means = pd.pivot_table(hi_res_maxes_means, values = ['mean','median','max'], index=['GUPI'], columns = 'variable').reset_index()
 hi_res_maxes_means.columns = [col[1]+col[0] for col in hi_res_maxes_means.columns.values]
 
 # Save ICPmean, CPPmean, ICPmax, and CPPmax
-hi_res_maxes_means.to_csv('../formatted_data/formatted_high_resolution_maxes_means.csv',index=False)
+hi_res_maxes_means.to_csv('../formatted_data/formatted_high_resolution_maxes_medians_means.csv',index=False)
 
 ### VI. Load and prepare demographic information and baseline characteristics
 ## Load demographic and outcome scores of patients in TIL dataframe
@@ -529,7 +616,7 @@ hi_res_info = pd.read_csv('../formatted_data/formatted_high_resolution_values.cs
 CENTER_TBI_demo_info = pd.read_csv('../CENTER-TBI/DemoInjHospMedHx/data.csv',na_values = ["NA","NaN"," ", ""])
 
 # Select columns that indicate pertinent baseline and outcome information
-CENTER_TBI_demo_info = CENTER_TBI_demo_info[['GUPI','PatientType','SiteCode','Age','Sex','Race','GCSScoreBaselineDerived','GOSE6monthEndpointDerived','ICURaisedICP','DecompressiveCranReason']].reset_index(drop=True)
+CENTER_TBI_demo_info = CENTER_TBI_demo_info[['GUPI','PatientType','SiteCode','Age','Sex','Race','GCSScoreBaselineDerived','GOSE6monthEndpointDerived','ICURaisedICP','DecompressiveCranReason','AssociatedStudy_1','AssociatedStudy_2','AssociatedStudy_3']].reset_index(drop=True)
 
 # Filter GUPIs to daily TIL dataframe GUPIs
 CENTER_TBI_demo_info = CENTER_TBI_demo_info[CENTER_TBI_demo_info.GUPI.isin(recalc_daily_TIL_info.GUPI)].reset_index(drop=True)
@@ -550,8 +637,8 @@ CENTER_TBI_demo_info['LowResolutionSet'] = 0
 CENTER_TBI_demo_info['HighResolutionSet'] = 0
 
 # Fill in indicators
-CENTER_TBI_demo_info.LowResolutionSet[CENTER_TBI_demo_info.GUPI.isin(lo_res_info.GUPI)] = 1
-CENTER_TBI_demo_info.HighResolutionSet[CENTER_TBI_demo_info.GUPI.isin(hi_res_info.GUPI)] = 1
+CENTER_TBI_demo_info.LowResolutionSet[CENTER_TBI_demo_info.GUPI.isin(lo_res_info[(~lo_res_info.ICPmean.isna())|(~lo_res_info.CPPmean.isna())].GUPI)] = 1
+CENTER_TBI_demo_info.HighResolutionSet[CENTER_TBI_demo_info.GUPI.isin(hi_res_info[(~hi_res_info.ICPmean.isna())|(~hi_res_info.CPPmean.isna())].GUPI)] = 1
 
 # Load and prepare ordinal prediction estimates
 ordinal_prediction_estimates = pd.read_csv('../../ordinal_GOSE_prediction/APM_outputs/DEEP_v1-0/APM_deepMN_compiled_test_predictions.csv').drop(columns='Unnamed: 0')
@@ -612,8 +699,11 @@ first_week_daily_TIL_info = recalc_daily_TIL_info[recalc_daily_TIL_info.TILTimep
 # Keep rows corresponding to TIL_max
 til_max_info = first_week_daily_TIL_info.loc[first_week_daily_TIL_info.groupby(['GUPI'])['TotalSum'].idxmax()].reset_index(drop=True).rename(columns={'TotalSum':'TILmax'})
 
+# Calculate TIL_median info
+til_median_info = pd.pivot_table(first_week_daily_TIL_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp','DailyTILCompleteStatus']).groupby(['GUPI','variable'],as_index=False)['value'].median(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TotalSum':'TILmedian'})
+
 # Calculate TIL_mean info
-til_mean_info = pd.pivot_table(first_week_daily_TIL_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TotalSum':'TILmean'})
+til_mean_info = pd.pivot_table(first_week_daily_TIL_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp','DailyTILCompleteStatus']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TotalSum':'TILmean'})
 
 ## PILOT
 # Load formatted daily PILOT dataframe
@@ -625,8 +715,11 @@ first_week_daily_PILOT_info = calc_daily_PILOT_info[calc_daily_PILOT_info.TILTim
 # Keep rows corresponding to PILOT_max
 pilot_max_info = first_week_daily_PILOT_info.loc[first_week_daily_PILOT_info.groupby(['GUPI'])['PILOTSum'].idxmax()].reset_index(drop=True).rename(columns={'PILOTSum':'PILOTmax'})
 
+# Calculate PILOT_median info
+pilot_median_info = pd.pivot_table(first_week_daily_PILOT_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp','DailyTILCompleteStatus']).groupby(['GUPI','variable'],as_index=False)['value'].median(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'PILOTSum':'PILOTmedian','TotalSum':'TILmedian'})
+
 # Calculate PILOT_mean info
-pilot_mean_info = pd.pivot_table(first_week_daily_PILOT_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'PILOTSum':'PILOTmean','TotalSum':'TILmean'})
+pilot_mean_info = pd.pivot_table(first_week_daily_PILOT_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp','DailyTILCompleteStatus']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'PILOTSum':'PILOTmean','TotalSum':'TILmean'})
 
 ## TIL_1987
 # Load formatted daily TIL_1987 dataframe
@@ -638,8 +731,11 @@ first_week_daily_TIL_1987_info = calc_daily_TIL_1987_info[calc_daily_TIL_1987_in
 # Keep rows corresponding to TIL_1987_max
 til_1987_max_info = first_week_daily_TIL_1987_info.loc[first_week_daily_TIL_1987_info.groupby(['GUPI'])['TIL_1987Sum'].idxmax()].reset_index(drop=True).rename(columns={'TIL_1987Sum':'TIL_1987max'})
 
+# Calculate TIL_1987_median info
+til_1987_median_info = pd.pivot_table(first_week_daily_TIL_1987_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp','DailyTILCompleteStatus']).groupby(['GUPI','variable'],as_index=False)['value'].median(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TIL_1987Sum':'TIL_1987median','TotalSum':'TILmedian'})
+
 # Calculate TIL_1987_mean info
-til_1987_mean_info = pd.pivot_table(first_week_daily_TIL_1987_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TIL_1987Sum':'TIL_1987mean','TotalSum':'TILmean'})
+til_1987_mean_info = pd.pivot_table(first_week_daily_TIL_1987_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp','DailyTILCompleteStatus']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TIL_1987Sum':'TIL_1987mean','TotalSum':'TILmean'})
 
 ## TIL_Basic
 # Load formatted daily TIL_Basic dataframe
@@ -651,8 +747,11 @@ first_week_daily_TIL_Basic_info = calc_daily_TIL_Basic_info[calc_daily_TIL_Basic
 # Keep rows corresponding to TIL_Basic_max
 til_basic_max_info = first_week_daily_TIL_Basic_info.loc[first_week_daily_TIL_Basic_info.groupby(['GUPI'])['TIL_Basic'].idxmax()].reset_index(drop=True).rename(columns={'TIL_Basic':'TIL_Basicmax'})
 
+# Calculate TIL_Basic_median info
+til_basic_median_info = pd.pivot_table(first_week_daily_TIL_Basic_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp','DailyTILCompleteStatus']).groupby(['GUPI','variable'],as_index=False)['value'].median(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TIL_Basic':'TIL_Basicmedian','TotalSum':'TILmedian'})
+
 # Calculate TIL_Basic_mean info
-til_basic_mean_info = pd.pivot_table(first_week_daily_TIL_Basic_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TIL_Basic':'TIL_Basicmean','TotalSum':'TILmean'})
+til_basic_mean_info = pd.pivot_table(first_week_daily_TIL_Basic_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp','DailyTILCompleteStatus']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'TIL_Basic':'TIL_Basicmean','TotalSum':'TILmean'})
 
 ## Save dataframes
 # Max dataframes
@@ -660,6 +759,12 @@ til_max_info.to_csv('../formatted_data/formatted_TIL_max.csv',index=False)
 pilot_max_info.to_csv('../formatted_data/formatted_PILOT_max.csv',index=False)
 til_1987_max_info.to_csv('../formatted_data/formatted_TIL_1987_max.csv',index=False)
 til_basic_max_info.to_csv('../formatted_data/formatted_TIL_Basic_max.csv',index=False)
+
+# Median dataframes
+til_median_info.to_csv('../formatted_data/formatted_TIL_median.csv',index=False)
+pilot_median_info.to_csv('../formatted_data/formatted_PILOT_median.csv',index=False)
+til_1987_median_info.to_csv('../formatted_data/formatted_TIL_1987_median.csv',index=False)
+til_basic_median_info.to_csv('../formatted_data/formatted_TIL_Basic_median.csv',index=False)
 
 # Mean dataframes
 til_mean_info.to_csv('../formatted_data/formatted_TIL_mean.csv',index=False)

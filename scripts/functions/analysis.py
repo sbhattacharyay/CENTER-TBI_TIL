@@ -129,7 +129,7 @@ def calculate_TILsum(mod_daily_TIL_info):
     TIL_surgery = TIL_surgery.groupby(['GUPI','TILTimepoint','TILDate','Item'],as_index=False)['score'].max().rename(columns={'score':'Score'})
 
     # Extract physician impressions
-    TIL_physician_impressions = mod_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TILPhysicianSatICP','TILPhysicianConcernsICP','TILPhysicianConcernsCPP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival']].melt(id_vars=['GUPI','TILTimepoint','TILDate'],var_name='Item',value_name='Score')
+    TIL_physician_impressions = mod_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TILPhysicianSatICP','TILPhysicianConcernsICP','TILPhysicianConcernsCPP','TILReasonForChange','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival']].melt(id_vars=['GUPI','TILTimepoint','TILDate'],var_name='Item',value_name='Score')
     TIL_physician_impressions = TIL_physician_impressions[(TIL_physician_impressions['Score']!=77)&(~TIL_physician_impressions['Score'].isna())].drop_duplicates(ignore_index=True)
     TIL_physician_impressions = TIL_physician_impressions.groupby(['GUPI','TILTimepoint','TILDate','Item'],as_index=False)['Score'].mean()
 
@@ -146,13 +146,13 @@ def calculate_TILsum(mod_daily_TIL_info):
     TIL_physician_impressions = pd.pivot_table(TIL_physician_impressions, values = 'Score', index=['GUPI','TILTimepoint','TILDate'], columns = 'Item').reset_index()
 
     # Merge dataframe to full set of TIL assessments and return
-    fixed_daily_TIL_info = mod_daily_TIL_info[['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp']].drop_duplicates(ignore_index=True).merge(TIL_subscores,how='left').sort_values(by=['GUPI','TILTimepoint'],ignore_index=False).fillna(0).merge(TIL_physician_impressions,how='left')
+    fixed_daily_TIL_info = mod_daily_TIL_info[['GUPI','TILTimepoint','TILDate','DailyTILCompleteStatus','ICUAdmTimeStamp','ICUDischTimeStamp']].drop_duplicates(ignore_index=True).merge(TIL_subscores,how='left').sort_values(by=['GUPI','TILTimepoint'],ignore_index=False).fillna(0).merge(TIL_physician_impressions,how='left')
     return(fixed_daily_TIL_info)
 
 ## Calculate TIL_1987 from unweighted TIL component dataframe
 def calculate_TIL_1987(unweighted_daily_TIL_info):
     # Create new dataframe for TIL_1987 scores
-    fixed_daily_TIL_1987_info = unweighted_daily_TIL_info[['GUPI', 'TILTimepoint', 'TILDate', 'ICUAdmTimeStamp','ICUDischTimeStamp','TotalSum','TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP']]
+    fixed_daily_TIL_1987_info = unweighted_daily_TIL_info[['GUPI', 'TILTimepoint', 'TILDate', 'DailyTILCompleteStatus','ICUAdmTimeStamp','ICUDischTimeStamp','TotalSum','TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP','TILReasonForChange']]
 
     # Barbiturate and sedation administration
     fixed_daily_TIL_1987_info['Sedation'] = 3*(unweighted_daily_TIL_info.Sedation == 3).astype(int) + (unweighted_daily_TIL_info.Sedation != 0).astype(int)
@@ -178,7 +178,7 @@ def calculate_TIL_1987(unweighted_daily_TIL_info):
 ## Calculate PILOT from unweighted TIL component dataframe
 def calculate_PILOT(unweighted_daily_TIL_info):
     # Create new dataframe for PILOT scores
-    fixed_daily_PILOT_info = unweighted_daily_TIL_info[['GUPI', 'TILTimepoint', 'TILDate', 'ICUAdmTimeStamp','ICUDischTimeStamp','TotalSum','TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP']]
+    fixed_daily_PILOT_info = unweighted_daily_TIL_info[['GUPI', 'TILTimepoint', 'TILDate', 'DailyTILCompleteStatus','ICUAdmTimeStamp','ICUDischTimeStamp','TotalSum','TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP','TILReasonForChange']]
 
     # Fever treatment and hypothermia (max = 5)
     fixed_daily_PILOT_info['Temperature'] = (unweighted_daily_TIL_info.Temperature != 0).astype(int)
@@ -222,7 +222,7 @@ def calculate_PILOT(unweighted_daily_TIL_info):
 ## Calculate TIL_Basic from unweighted TIL component dataframe
 def calculate_TIL_Basic(unweighted_daily_TIL_info):
     # Create new dataframe for TIL_Basic scores
-    fixed_daily_TIL_Basic_info = unweighted_daily_TIL_info[['GUPI', 'TILTimepoint', 'TILDate', 'ICUAdmTimeStamp','ICUDischTimeStamp','TotalSum','TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP']]
+    fixed_daily_TIL_Basic_info = unweighted_daily_TIL_info[['GUPI', 'TILTimepoint', 'TILDate', 'DailyTILCompleteStatus','ICUAdmTimeStamp','ICUDischTimeStamp','TotalSum','TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP','TILReasonForChange']]
 
     # Create new column for TIL_Basic
     fixed_daily_TIL_Basic_info['TIL_Basic'] = 0
