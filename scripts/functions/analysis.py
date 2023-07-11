@@ -155,13 +155,13 @@ def calculate_TIL_1987(unweighted_daily_TIL_info):
     fixed_daily_TIL_1987_info = unweighted_daily_TIL_info[['GUPI', 'TILTimepoint', 'TILDate', 'DailyTILCompleteStatus','ICUAdmTimeStamp','ICUDischTimeStamp','TotalSum','TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP','TILReasonForChange']]
 
     # Barbiturate and sedation administration
-    fixed_daily_TIL_1987_info['Sedation'] = 3*(unweighted_daily_TIL_info.Sedation == 3).astype(int) + (unweighted_daily_TIL_info.Sedation != 0).astype(int)
+    fixed_daily_TIL_1987_info['Sedation'] = 3*(unweighted_daily_TIL_info.Sedation == 3) + (unweighted_daily_TIL_info.Sedation != 0)
 
     # Mannitol administration
-    fixed_daily_TIL_1987_info['Mannitol'] = 3*unweighted_daily_TIL_info.Mannitol.astype(int)
+    fixed_daily_TIL_1987_info['Mannitol'] = 3*unweighted_daily_TIL_info.Mannitol
 
     # Ventricular drainage
-    fixed_daily_TIL_1987_info['Ventricular'] = unweighted_daily_TIL_info.CSFDrainage.astype(int)
+    fixed_daily_TIL_1987_info['Ventricular'] = unweighted_daily_TIL_info.CSFDrainage
 
     # Hyperventilation
     fixed_daily_TIL_1987_info['Hyperventilation'] = 0
@@ -169,7 +169,7 @@ def calculate_TIL_1987(unweighted_daily_TIL_info):
     fixed_daily_TIL_1987_info['Hyperventilation'][unweighted_daily_TIL_info.Ventilation.isin([1,2])] = 1
 
     # Paralysis
-    fixed_daily_TIL_1987_info['Paralysis'] = unweighted_daily_TIL_info.Neuromuscular.astype(int)
+    fixed_daily_TIL_1987_info['Paralysis'] = unweighted_daily_TIL_info.Neuromuscular
 
     # Calculate summed TIL_1987
     fixed_daily_TIL_1987_info['TIL_1987Sum'] = fixed_daily_TIL_1987_info.Mannitol + fixed_daily_TIL_1987_info.Ventricular + fixed_daily_TIL_1987_info.Hyperventilation + fixed_daily_TIL_1987_info.Paralysis + fixed_daily_TIL_1987_info.Sedation
@@ -181,15 +181,15 @@ def calculate_PILOT(unweighted_daily_TIL_info):
     fixed_daily_PILOT_info = unweighted_daily_TIL_info[['GUPI', 'TILTimepoint', 'TILDate', 'DailyTILCompleteStatus','ICUAdmTimeStamp','ICUDischTimeStamp','TotalSum','TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP','TILReasonForChange']]
 
     # Fever treatment and hypothermia (max = 5)
-    fixed_daily_PILOT_info['Temperature'] = (unweighted_daily_TIL_info.Temperature != 0).astype(int)
+    fixed_daily_PILOT_info['Temperature'] = (unweighted_daily_TIL_info.Temperature != 0).astype(float)
     fixed_daily_PILOT_info.Temperature[unweighted_daily_TIL_info.Temperature==2] = 3
     fixed_daily_PILOT_info.Temperature[unweighted_daily_TIL_info.Temperature==3] = 5
 
     # Sedation (max = 5)
-    fixed_daily_PILOT_info['Sedation'] = (unweighted_daily_TIL_info.Sedation != 0).astype(int) + 4*(unweighted_daily_TIL_info.Sedation == 3).astype(int)
+    fixed_daily_PILOT_info['Sedation'] = (unweighted_daily_TIL_info.Sedation != 0) + 4*(unweighted_daily_TIL_info.Sedation == 3)
 
     # Neuromuscular blockade (max = 2)
-    fixed_daily_PILOT_info['Neuromuscular'] = 2*unweighted_daily_TIL_info.Neuromuscular.astype(int)
+    fixed_daily_PILOT_info['Neuromuscular'] = 2*unweighted_daily_TIL_info.Neuromuscular
 
     # Ventilation (max = 4)
     fixed_daily_PILOT_info['Ventilation'] = unweighted_daily_TIL_info.Ventilation
@@ -200,20 +200,20 @@ def calculate_PILOT(unweighted_daily_TIL_info):
     fixed_daily_PILOT_info.Mannitol[fixed_daily_PILOT_info.Mannitol!=0] = fixed_daily_PILOT_info.Mannitol[fixed_daily_PILOT_info.Mannitol!=0]+1
 
     # Hypertonic saline (max = 3)
-    fixed_daily_PILOT_info['Hypertonic'] = 3*(unweighted_daily_TIL_info.Hypertonic != 0).astype(int)
+    fixed_daily_PILOT_info['Hypertonic'] = 3*(unweighted_daily_TIL_info.Hypertonic != 0)
 
     # CSF drainage (max = 5)
     fixed_daily_PILOT_info['CSFDrainage'] = unweighted_daily_TIL_info.CSFDrainage
     fixed_daily_PILOT_info.CSFDrainage[fixed_daily_PILOT_info.CSFDrainage!=0] = fixed_daily_PILOT_info.CSFDrainage[fixed_daily_PILOT_info.CSFDrainage!=0]+3
 
     # Hematoma evacuation (max = 4)
-    fixed_daily_PILOT_info['ICPSurgery'] = 4*unweighted_daily_TIL_info.ICPSurgery.astype(int)
+    fixed_daily_PILOT_info['ICPSurgery'] = 4*unweighted_daily_TIL_info.ICPSurgery
 
     # Decompressive craniectomy (max = 5)
-    fixed_daily_PILOT_info['DecomCraniectomy'] = 5*unweighted_daily_TIL_info.DecomCraniectomy.astype(int)
+    fixed_daily_PILOT_info['DecomCraniectomy'] = 5*unweighted_daily_TIL_info.DecomCraniectomy
 
     # Induced hypertension (max = 2)
-    fixed_daily_PILOT_info['Vasopressor'] = 2*unweighted_daily_TIL_info.Vasopressor.astype(int)
+    fixed_daily_PILOT_info['Vasopressor'] = 2*unweighted_daily_TIL_info.Vasopressor
 
     # Calculate summed PILOT
     fixed_daily_PILOT_info['PILOTSum'] = fixed_daily_PILOT_info.Temperature + fixed_daily_PILOT_info.Sedation + fixed_daily_PILOT_info.Neuromuscular + fixed_daily_PILOT_info.Ventilation + fixed_daily_PILOT_info.Mannitol + fixed_daily_PILOT_info.Hypertonic + fixed_daily_PILOT_info.CSFDrainage + fixed_daily_PILOT_info.ICPSurgery + fixed_daily_PILOT_info.DecomCraniectomy + fixed_daily_PILOT_info.Vasopressor
@@ -237,7 +237,7 @@ def calculate_TIL_Basic(unweighted_daily_TIL_info):
     fixed_daily_TIL_Basic_info.TIL_Basic[(unweighted_daily_TIL_info.Mannitol==2)|(unweighted_daily_TIL_info.Hypertonic==2)|(unweighted_daily_TIL_info.Ventilation==2)|(unweighted_daily_TIL_info.Temperature==2)|(unweighted_daily_TIL_info.CSFDrainage==2)] = 3
 
     # Mark all TIL_Basic 4 instances
-    fixed_daily_TIL_Basic_info.TIL_Basic[(unweighted_daily_TIL_info.Sedation==3)|(unweighted_daily_TIL_info.Ventilation==3)|(unweighted_daily_TIL_info.Temperature==3)|((unweighted_daily_TIL_info.DecomCraniectomy==1)&(unweighted_daily_TIL_info.TILTimepoint>1))|(unweighted_daily_TIL_info.ICPSurgery==1)] = 4
+    fixed_daily_TIL_Basic_info.TIL_Basic[(unweighted_daily_TIL_info.Sedation==3)|(unweighted_daily_TIL_info.Ventilation==3)|(unweighted_daily_TIL_info.Temperature==3)|(unweighted_daily_TIL_info.DecomCraniectomy==1)|(unweighted_daily_TIL_info.ICPSurgery==1)] = 4
 
     # Calculate summed TIL_Basic
     return(fixed_daily_TIL_Basic_info)
@@ -610,3 +610,63 @@ def calc_MCC_accuracy(curr_rs,delta_df,progress_bar=True,progress_bar_desc=''):
 
     # Return compiled dataframe
     return (pd.concat(compiled_MCC_accuracy_df,ignore_index=True))
+
+# Function to calculate summary statistics stratified by missingness of longitudinal measures
+def long_missingness_analysis(char_set,data_set,timepoints,chosen_cols):
+    # Create empty running lists to store numeric and categorical variable summary statistics
+    num_summary_stats = []
+    cat_summary_stats = []
+    
+    # Iterate through columns of interest
+    for curr_col in chosen_cols:
+
+        # Iterate through timepoints of interest
+        for curr_tp in timepoints:
+            
+            # Filter datasets to current timepoint
+            curr_filt_dataset = data_set[(data_set.TILTimepoint==curr_tp)].reset_index(drop=True)
+            curr_filt_charset = char_set[char_set.GUPI.isin(curr_filt_dataset.GUPI)].reset_index(drop=True)
+
+            # Add daily TIL scores to current, filtered characteristics set
+            curr_filt_charset = curr_filt_charset.merge(curr_filt_dataset[['GUPI','TotalSum']],how='left').rename(columns={'TotalSum':'TIL24'})
+
+            # Extract patient GUPIs with non-missing value for variable of interest
+            curr_in_set = pd.DataFrame({'Set':'In','GUPI':curr_filt_dataset[~curr_filt_dataset[curr_col].isna()].GUPI.unique()})
+            curr_out_set = pd.DataFrame({'Set':'Out','GUPI':curr_filt_dataset[curr_filt_dataset[curr_col].isna()].GUPI.unique()})
+            curr_set_key = pd.concat([curr_in_set,curr_out_set],ignore_index=True)
+
+            # Add set placement to characteristic dataframe
+            curr_filt_charset = curr_filt_charset.merge(curr_set_key,how='left')
+
+            # Divide characteristics into numeric and categorical and melt into long form
+            num_filt_charset = curr_filt_charset[['GUPI','Set','Age','Pr(GOSE>1)','Pr(GOSE>3)','Pr(GOSE>4)','Pr(GOSE>5)','Pr(GOSE>6)','Pr(GOSE>7)','TILmax','TILmedian','TIL24']].melt(id_vars=['GUPI','Set'],value_vars=['Age','Pr(GOSE>1)','Pr(GOSE>3)','Pr(GOSE>4)','Pr(GOSE>5)','Pr(GOSE>6)','Pr(GOSE>7)','TILmax','TILmedian','TIL24']).dropna().reset_index(drop=True)
+            cat_filt_charset = curr_filt_charset[['GUPI','Set','SiteCode','Sex','GCSSeverity','GOSE6monthEndpointDerived','RefractoryICP','MarshallCT']].melt(id_vars=['GUPI','Set'],value_vars=['SiteCode','Sex','GCSSeverity','GOSE6monthEndpointDerived','RefractoryICP','MarshallCT']).dropna().reset_index(drop=True)
+            cat_filt_charset['value'] = cat_filt_charset['value'].astype(str)
+
+            # First, calculate summary statistics for each numeric variable
+            curr_num_summary_stats = num_filt_charset.groupby(['variable','Set'],as_index=False)['value'].aggregate({'q1':lambda x: np.quantile(x,.25),'median':np.median,'q3':lambda x: np.quantile(x,.75),'n':'count'}).reset_index(drop=True)
+            curr_num_summary_stats.insert(1,'DaysSinceICUAdmission',curr_tp)
+            curr_num_summary_stats.insert(2,'MissingVariable',curr_col)
+
+            # Second, calculate p-value for each numeric variable comparison and add to dataframe
+            curr_num_summary_stats = curr_num_summary_stats.merge(num_filt_charset.groupby('variable',as_index=False).apply(lambda x: stats.ttest_ind(x['value'][x.Set=='In'].values,x['value'][x.Set=='Out'].values,equal_var=False).pvalue).rename(columns={None:'p_val'}),how='left')
+
+            # Third, calculate summary characteristics for each categorical variable
+            curr_cat_summary_stats = cat_filt_charset.groupby(['variable','Set','value'],as_index=False).GUPI.count().rename(columns={'GUPI':'n'}).merge(cat_filt_charset.groupby(['variable','Set'],as_index=False).GUPI.count().rename(columns={'GUPI':'n_total'}),how='left')
+            curr_cat_summary_stats['proportion'] = 100*(curr_cat_summary_stats['n']/curr_cat_summary_stats['n_total'])
+            curr_cat_summary_stats.insert(1,'DaysSinceICUAdmission',curr_tp)
+            curr_cat_summary_stats.insert(2,'MissingVariable',curr_col)
+            
+            # Fourth, calculate p-value for each categorical variable comparison and add to dataframe
+            curr_cat_summary_stats = curr_cat_summary_stats.merge(cat_filt_charset.groupby('variable',as_index=False).apply(lambda x: stats.chi2_contingency(pd.crosstab(x["value"],x["Set"])).pvalue).rename(columns={None:'p_val'}),how='left')
+
+            # Append current summary statistics to running lists
+            num_summary_stats.append(curr_num_summary_stats)
+            cat_summary_stats.append(curr_cat_summary_stats)
+
+    # Concatenate running lists
+    num_summary_stats = pd.concat(num_summary_stats,ignore_index=True)
+    cat_summary_stats = pd.concat(cat_summary_stats,ignore_index=True)
+
+    # Return results
+    return(num_summary_stats,cat_summary_stats)

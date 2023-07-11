@@ -16,6 +16,7 @@
 # IX. Load and prepare serum sodium values from CENTER-TBI
 
 ### I. Initialisation
+## Import libraries and prepare environment
 # Fundamental libraries
 import os
 import re
@@ -40,6 +41,19 @@ warnings.filterwarnings(action="ignore")
 
 # Custom methods
 from functions.analysis import calculate_TILsum, calculate_TIL_1987, calculate_PILOT, calculate_TIL_Basic
+
+## Create relevant directories
+# Initialise directory to store formatted data
+formatted_data_dir = '../formatted_data'
+
+# Create formatted data directory
+os.makedirs(formatted_data_dir,exist_ok=True)
+
+# Initialise results directory
+results_dir = '../results'
+
+# Create results directory
+os.makedirs(results_dir,exist_ok=True)
 
 ### II. Load and prepare initial study set
 ## Load and prepare timestamp dataframe
@@ -301,12 +315,49 @@ for curr_GUPI in tqdm(gupis_with_refract_DecomCranectomy, 'Fixing TotalTIL and r
 # Apply custom function
 recalc_daily_TIL_info = calculate_TILsum(mod_daily_TIL_info).sort_values(['GUPI','TILTimepoint'],ignore_index=True)
 
-# Save modified Daily TIL dataframes in new directory
-os.makedirs('../formatted_data/',exist_ok=True)
-recalc_daily_TIL_info.to_csv('../formatted_data/formatted_TIL_scores.csv',index=False)
+# Filter ICU timestamp information to study population
+CENTER_TBI_datetime = CENTER_TBI_datetime[CENTER_TBI_datetime.GUPI.isin(recalc_daily_TIL_info.GUPI)].reset_index(drop=True)
 
+## Identify expected cases that are missing
+# Calculate minimum number of expected TIL scores from ICU stay duration
+CENTER_TBI_datetime['ExpectedCount'] = (CENTER_TBI_datetime['ICUDurationHours']/24).apply(lambda x: max(np.floor(x),1),7).astype(int)
+
+# Create a dummy dataframe of TILTimepoints
+dummy_timepoints = pd.DataFrame({'TILTimepoint':[i+1 for i in range(CENTER_TBI_datetime.ExpectedCount.max())],'key':1})
+
+# Add dummy 'key' column to dataframe
+CENTER_TBI_datetime['key'] = 1
+
+# Create dataframe of expected GUPI-TILTimepoint combinations
+expected_combinations = CENTER_TBI_datetime[['GUPI','ExpectedCount','key']].merge(dummy_timepoints).drop(columns='key')
+
+# Filter to keep timepoints within expected range
+expected_combinations = expected_combinations[expected_combinations.TILTimepoint<=expected_combinations.ExpectedCount].drop(columns='ExpectedCount').reset_index(drop=True)
+
+# Merge expected combinations with available cases to identify missing instances
+merged_expected_combinations = expected_combinations.merge(recalc_daily_TIL_info,how='outer')
+
+## Fix dates in merged expected combinations dataframe
+# Iterate through GUPIs and fix `TILDate` based on `TILTimepoint` information if possible
+for curr_GUPI in tqdm(merged_expected_combinations.GUPI.unique(),'Fixing merged daily TIL dates if possible'):
+    curr_GUPI_daily_TIL = merged_expected_combinations[merged_expected_combinations.GUPI==curr_GUPI].reset_index(drop=True)
+    curr_date_diff = int((curr_GUPI_daily_TIL.TILDate.dt.day - curr_GUPI_daily_TIL.TILTimepoint.astype(float)).mode()[0])
+    fixed_date_vector = pd.Series([pd.Timestamp('1970-01-01') + pd.DateOffset(days=dt+curr_date_diff) for dt in (curr_GUPI_daily_TIL.TILTimepoint.astype(float)-1)],index=merged_expected_combinations[(merged_expected_combinations.GUPI==curr_GUPI)&(merged_expected_combinations.TILTimepoint!='None')].index)
+    merged_expected_combinations.TILDate[merged_expected_combinations.GUPI==curr_GUPI] = fixed_date_vector    
+
+## Prepare and save formatted daily TIL scores (and expected days)
+# Sort merged expected combination dataframe
+merged_expected_combinations = merged_expected_combinations.sort_values(['GUPI','TILTimepoint'],ignore_index=True)
+
+# Move TotalSum column to after TILTimepoint
+merged_expected_combinations.insert(2, 'TotalSum', merged_expected_combinations.pop('TotalSum'))
+
+# Save modified Daily TIL dataframes in formatted data directory
+merged_expected_combinations.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_scores.csv'),index=False)
+
+## Remove weighting from TIL components and save unweighted TIL scores
 # Remove weighting from dataframe scores and re-save
-unweighted_daily_TIL_info = recalc_daily_TIL_info.copy()
+unweighted_daily_TIL_info = merged_expected_combinations.copy()
 unweighted_daily_TIL_info['CSFDrainage'] = unweighted_daily_TIL_info['CSFDrainage'].rank(method='dense') - 1
 unweighted_daily_TIL_info['DecomCraniectomy'] = unweighted_daily_TIL_info['DecomCraniectomy'].rank(method='dense') - 1
 unweighted_daily_TIL_info['Hypertonic'] = unweighted_daily_TIL_info['Hypertonic'].rank(method='dense') - 1
@@ -318,24 +369,27 @@ unweighted_daily_TIL_info['Temperature'] = unweighted_daily_TIL_info['Temperatur
 unweighted_daily_TIL_info['Ventilation'] = unweighted_daily_TIL_info['Ventilation'].rank(method='dense') - 1
 unweighted_daily_TIL_info['uwTILSum'] = unweighted_daily_TIL_info.CSFDrainage + unweighted_daily_TIL_info.DecomCraniectomy + unweighted_daily_TIL_info.FluidLoading + unweighted_daily_TIL_info.Hypertonic + unweighted_daily_TIL_info.ICPSurgery + unweighted_daily_TIL_info.Mannitol + unweighted_daily_TIL_info.Neuromuscular + unweighted_daily_TIL_info.Positioning + unweighted_daily_TIL_info.Sedation + unweighted_daily_TIL_info.Temperature + unweighted_daily_TIL_info.Vasopressor + unweighted_daily_TIL_info.Ventilation
 
+# Move uwTILSum column to after TILTimepoint
+unweighted_daily_TIL_info.insert(2, 'uwTILSum', unweighted_daily_TIL_info.pop('uwTILSum'))
+
 # Save unweighted Daily TIL dataframe in new directory
-unweighted_daily_TIL_info.to_csv('../formatted_data/formatted_unweighted_TIL_scores.csv',index=False)
+unweighted_daily_TIL_info.to_csv(os.path.join(formatted_data_dir,'formatted_unweighted_TIL_scores.csv'),index=False)
 
 ### III. Load and prepare hourly changes in TIL
 ## Load and prepare formatted daily TIL dataframe
-recalc_daily_TIL_info = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+formatted_TIL_scores = pd.read_csv(os.path.join(formatted_data_dir,'formatted_TIL_scores.csv'))
 
 # Convert dates from string to date format
-recalc_daily_TIL_info.TILDate = pd.to_datetime(recalc_daily_TIL_info.TILDate,format = '%Y-%m-%d')
-recalc_daily_TIL_info.ICUAdmTimeStamp = pd.to_datetime(recalc_daily_TIL_info.ICUAdmTimeStamp,format = '%Y-%m-%d %H:%M:%S')
-recalc_daily_TIL_info.ICUDischTimeStamp = pd.to_datetime(recalc_daily_TIL_info.ICUDischTimeStamp,format = '%Y-%m-%d %H:%M:%S')
+formatted_TIL_scores.TILDate = pd.to_datetime(formatted_TIL_scores.TILDate,format = '%Y-%m-%d')
+formatted_TIL_scores.ICUAdmTimeStamp = pd.to_datetime(formatted_TIL_scores.ICUAdmTimeStamp,format = '%Y-%m-%d %H:%M:%S')
+formatted_TIL_scores.ICUDischTimeStamp = pd.to_datetime(formatted_TIL_scores.ICUDischTimeStamp,format = '%Y-%m-%d %H:%M:%S')
 
 ## Load and prepare HourlyValues dataframe
 # Load HourlyValues dataframe
 daily_hourly_info = pd.read_csv('../CENTER-TBI/DailyHourlyValues/data.csv',na_values = ["NA","NaN"," ", ""])
 
 # Filter patients for whom TIL values exist
-daily_hourly_info = daily_hourly_info[daily_hourly_info.GUPI.isin(recalc_daily_TIL_info.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
+daily_hourly_info = daily_hourly_info[daily_hourly_info.GUPI.isin(formatted_TIL_scores.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
 
 # Remove all entries without date or `HourlyValueTimePoint`
 daily_hourly_info = daily_hourly_info[(daily_hourly_info.HourlyValueTimePoint!='None')|(~daily_hourly_info.HVDate.isna())].reset_index(drop=True)
@@ -372,32 +426,32 @@ daily_hourly_info = daily_hourly_info.loc[daily_hourly_info.groupby(['GUPI','HVD
 
 ## Merge daily hourly and daily TIL change information and save
 # Calculate daily differences in TIL from previously calculated values
-recalc_daily_TIL_info['ChangeInTIL'] = recalc_daily_TIL_info.groupby(['GUPI'])['TotalSum'].diff()
+formatted_TIL_scores['ChangeInTIL'] = formatted_TIL_scores.groupby(['GUPI'])['TotalSum'].diff()
 
 # Remove NA change rows and select only pertinent rows
-delta_daily_TIL_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum','ChangeInTIL']]
+delta_daily_TIL_info = formatted_TIL_scores[['GUPI','TILTimepoint','TILDate','TotalSum','ChangeInTIL']]
 
 # Merge hourly changes in TIL to daily delta dataframe
-delta_daily_TIL_info = delta_daily_TIL_info.merge(daily_hourly_info.rename(columns={'HVDate':'TILDate'}),how='inner')
+delta_daily_TIL_info = delta_daily_TIL_info.merge(daily_hourly_info.rename(columns={'HVDate':'TILDate'}),how='outer')
 
 # Save deltaTIL dataframe in new directory
-delta_daily_TIL_info.to_csv('../formatted_data/formatted_delta_TIL_scores.csv',index=False)
+delta_daily_TIL_info.to_csv(os.path.join(formatted_data_dir,'formatted_delta_TIL_scores.csv'),index=False)
 
 ### IV. Load and prepare low-resolution ICP and CPP information
 ## Load and prepare formatted daily TIL dataframe
-recalc_daily_TIL_info = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+formatted_TIL_scores = pd.read_csv(os.path.join(formatted_data_dir,'formatted_TIL_scores.csv'))
 
 # Convert dates from string to date format
-recalc_daily_TIL_info.TILDate = pd.to_datetime(recalc_daily_TIL_info.TILDate,format = '%Y-%m-%d')
-recalc_daily_TIL_info.ICUAdmTimeStamp = pd.to_datetime(recalc_daily_TIL_info.ICUAdmTimeStamp,format = '%Y-%m-%d %H:%M:%S')
-recalc_daily_TIL_info.ICUDischTimeStamp = pd.to_datetime(recalc_daily_TIL_info.ICUDischTimeStamp,format = '%Y-%m-%d %H:%M:%S')
+formatted_TIL_scores.TILDate = pd.to_datetime(formatted_TIL_scores.TILDate,format = '%Y-%m-%d')
+formatted_TIL_scores.ICUAdmTimeStamp = pd.to_datetime(formatted_TIL_scores.ICUAdmTimeStamp,format = '%Y-%m-%d %H:%M:%S')
+formatted_TIL_scores.ICUDischTimeStamp = pd.to_datetime(formatted_TIL_scores.ICUDischTimeStamp,format = '%Y-%m-%d %H:%M:%S')
 
 ## Load and prepare HourlyValues dataframe
 # Load HourlyValues dataframe
 daily_hourly_info = pd.read_csv('../CENTER-TBI/DailyHourlyValues/data.csv',na_values = ["NA","NaN"," ", ""])
 
 # Filter patients for whom TIL values exist
-daily_hourly_info = daily_hourly_info[daily_hourly_info.GUPI.isin(recalc_daily_TIL_info.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
+daily_hourly_info = daily_hourly_info[daily_hourly_info.GUPI.isin(formatted_TIL_scores.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
 
 # Remove all rows with NA for all data variable columns
 true_var_columns = daily_hourly_info.columns.difference(['GUPI', 'HourlyValueTimePoint', 'HVHour', 'HVDate','HVTime','HourlyValuesCompleteStatus'])
@@ -447,7 +501,10 @@ lo_res_info['ChangeInCPP'] = lo_res_info.groupby(['GUPI'])['CPPmean'].diff()
 lo_res_info['ChangeInICP'] = lo_res_info.groupby(['GUPI'])['ICPmean'].diff()
 
 # Merge hourly ICP and CPP values with daily TIL
-lo_res_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(lo_res_info,how='outer').merge(mode_lo_res_info,how='left')
+lo_res_info = formatted_TIL_scores[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(lo_res_info,how='outer').merge(mode_lo_res_info,how='left')
+
+# Add a marker to indicate whether TIL score is expected at each row
+lo_res_info['TILExpected'] = lo_res_info['TILTimepoint'].notna().astype(int)
 
 # Determine GUPIs with missing timepoints
 none_GUPIs = lo_res_info[lo_res_info.TILTimepoint.isna()].GUPI.unique()
@@ -487,35 +544,35 @@ lo_res_info['ICPRevisedIndicator'] = (lo_res_info.TILDate[~lo_res_info.ICPRevisi
 lo_res_info = lo_res_info.drop(columns=['ICPRemTimeStamp','ICPRevisionTimeStamp'])
 
 ## Save modified Daily hourly value dataframes in new directory
-lo_res_info.to_csv('../formatted_data/formatted_low_resolution_values.csv',index=False)
+lo_res_info.to_csv(os.path.join(formatted_data_dir,'formatted_low_resolution_values.csv'),index=False)
 
 ## Calculate means and maxes
 # Filter to only keep values from the first week
-first_week_lo_res_info = lo_res_info[(lo_res_info.TILTimepoint<=7)&(~lo_res_info.TotalSum.isna())].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
+first_week_lo_res_info = lo_res_info[(lo_res_info.TILTimepoint>=1)&(lo_res_info.TILTimepoint<=7)&(lo_res_info.TILExpected==1)].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
 
 # Calculate ICPmean, CPPmean, ICPmax, and CPPmax
-lo_res_maxes_means = first_week_lo_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'mean':'mean','max':'max','median':'median'})
-lo_res_maxes_means = pd.pivot_table(lo_res_maxes_means, values = ['mean','median','max'], index=['GUPI'], columns = 'variable').reset_index()
+lo_res_maxes_means = first_week_lo_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'median':'median','mean':'mean','min':'min','max':'max'})
+lo_res_maxes_means = pd.pivot_table(lo_res_maxes_means, values = ['mean','median','min','max'], index=['GUPI'], columns = 'variable').reset_index()
 lo_res_maxes_means.columns = [col[1]+col[0] for col in lo_res_maxes_means.columns.values]
 
 # Save ICPmean, CPPmean, ICPmax, and CPPmax
-lo_res_maxes_means.to_csv('../formatted_data/formatted_low_resolution_maxes_medians_means.csv',index=False)
+lo_res_maxes_means.to_csv(os.path.join(formatted_data_dir,'formatted_low_resolution_mins_maxes_medians_means.csv'),index=False)
 
 ### V. Load and prepare high-resolution ICP and CPP information
 ## Load and prepare formatted daily TIL dataframe
-recalc_daily_TIL_info = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+formatted_TIL_scores = pd.read_csv(os.path.join(formatted_data_dir,'formatted_TIL_scores.csv'))
 
 # Convert dates from string to date format
-recalc_daily_TIL_info.TILDate = pd.to_datetime(recalc_daily_TIL_info.TILDate,format = '%Y-%m-%d')
-recalc_daily_TIL_info.ICUAdmTimeStamp = pd.to_datetime(recalc_daily_TIL_info.ICUAdmTimeStamp,format = '%Y-%m-%d %H:%M:%S')
-recalc_daily_TIL_info.ICUDischTimeStamp = pd.to_datetime(recalc_daily_TIL_info.ICUDischTimeStamp,format = '%Y-%m-%d %H:%M:%S')
+formatted_TIL_scores.TILDate = pd.to_datetime(formatted_TIL_scores.TILDate,format = '%Y-%m-%d')
+formatted_TIL_scores.ICUAdmTimeStamp = pd.to_datetime(formatted_TIL_scores.ICUAdmTimeStamp,format = '%Y-%m-%d %H:%M:%S')
+formatted_TIL_scores.ICUDischTimeStamp = pd.to_datetime(formatted_TIL_scores.ICUDischTimeStamp,format = '%Y-%m-%d %H:%M:%S')
 
 ## Load and format high-resolution ICP/CPP summary values
 # Load high-resolution ICP/CPP summary values of same day as TIL assessments
 hi_res_info = pd.read_csv('../CENTER-TBI/HighResolution/til_same.csv',na_values = ["NA","NaN"," ", ""])
 
 # Filter patients for whom TIL values exist
-hi_res_info = hi_res_info[hi_res_info.GUPI.isin(recalc_daily_TIL_info.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
+hi_res_info = hi_res_info[hi_res_info.GUPI.isin(formatted_TIL_scores.GUPI)].dropna(axis=1,how='all').reset_index(drop=True)
 
 # Filter columns of interest
 hi_res_info = hi_res_info[['GUPI','TimeStamp','TotalTIL','ICP_mean','CPP_mean','ICP_n','CPP_n']]
@@ -547,7 +604,10 @@ hi_res_info['ChangeInCPP'] = hi_res_info.groupby(['GUPI'])['CPP_mean'].diff()
 hi_res_info['ChangeInICP'] = hi_res_info.groupby(['GUPI'])['ICP_mean'].diff()
 
 # Merge hi-resolution ICP and CPP values with daily TIL
-hi_res_info = recalc_daily_TIL_info[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(hi_res_info,how='outer').rename(columns={'ICP_mean':'ICPmean','CPP_mean':'CPPmean','ICP_n':'nICP','CPP_n':'nCPP'})
+hi_res_info = formatted_TIL_scores[['GUPI','TILTimepoint','TILDate','TotalSum']].merge(hi_res_info,how='outer').rename(columns={'ICP_mean':'ICPmean','CPP_mean':'CPPmean','ICP_n':'nICP','CPP_n':'nCPP'})
+
+# Add a marker to indicate whether TIL score is expected at each row
+hi_res_info['TILExpected'] = hi_res_info['TILTimepoint'].notna().astype(int)
 
 # Determine GUPIs with missing timepoints
 none_GUPIs = hi_res_info[hi_res_info.TILTimepoint.isna()].GUPI.unique()
@@ -587,30 +647,30 @@ hi_res_info['ICPRevisedIndicator'] = (hi_res_info.TILDate[~hi_res_info.ICPRevisi
 hi_res_info = hi_res_info.drop(columns=['ICPRemTimeStamp','ICPRevisionTimeStamp'])
 
 ## Save modified Daily hourly value dataframes in new directory
-hi_res_info.to_csv('../formatted_data/formatted_high_resolution_values.csv',index=False)
+hi_res_info.to_csv(os.path.join(formatted_data_dir,'formatted_high_resolution_values.csv'),index=False)
 
 ## Calculate means, medians, and maxes
 # Filter to only keep values from the first week
-first_week_hi_res_info = hi_res_info[(hi_res_info.TILTimepoint<=7)&(~hi_res_info.TotalSum.isna())].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
+first_week_hi_res_info = hi_res_info[(hi_res_info.TILTimepoint>=1)&(hi_res_info.TILTimepoint<=7)&(hi_res_info.TILExpected==1)].reset_index(drop=True).rename(columns={'ICPmean':'ICP','CPPmean':'CPP'})
 
 # Calculate ICPmean, CPPmean, ICPmax, and CPPmax
-hi_res_maxes_means = first_week_hi_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'mean':'mean','max':'max','median':'median'})
-hi_res_maxes_means = pd.pivot_table(hi_res_maxes_means, values = ['mean','median','max'], index=['GUPI'], columns = 'variable').reset_index()
+hi_res_maxes_means = first_week_hi_res_info.melt(id_vars=['GUPI','TILTimepoint','TILDate','TotalSum'],value_vars=['CPP','ICP','ChangeInCPP','ChangeInICP']).groupby(by=['GUPI','variable'],as_index=False).value.aggregate({'median':'median','mean':'mean','min':'min','max':'max'})
+hi_res_maxes_means = pd.pivot_table(hi_res_maxes_means, values = ['mean','median','min','max'], index=['GUPI'], columns = 'variable').reset_index()
 hi_res_maxes_means.columns = [col[1]+col[0] for col in hi_res_maxes_means.columns.values]
 
 # Save ICPmean, CPPmean, ICPmax, and CPPmax
-hi_res_maxes_means.to_csv('../formatted_data/formatted_high_resolution_maxes_medians_means.csv',index=False)
+hi_res_maxes_means.to_csv(os.path.join(formatted_data_dir,'formatted_high_resolution_mins_maxes_medians_means.csv'),index=False)
 
 ### VI. Load and prepare demographic information and baseline characteristics
 ## Load demographic and outcome scores of patients in TIL dataframe
 # Load formatted daily TIL dataframe
-recalc_daily_TIL_info = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+formatted_TIL_scores = pd.read_csv(os.path.join(formatted_data_dir,'formatted_TIL_scores.csv'))
 
 # Load low-resolution value dataframe
-lo_res_info = pd.read_csv('../formatted_data/formatted_low_resolution_values.csv')
+lo_res_info = pd.read_csv(os.path.join(formatted_data_dir,'formatted_low_resolution_values.csv'))
 
 # Load high-resolution value dataframe
-hi_res_info = pd.read_csv('../formatted_data/formatted_high_resolution_values.csv')
+hi_res_info = pd.read_csv(os.path.join(formatted_data_dir,'formatted_high_resolution_values.csv'))
 
 # Load CENTER-TBI dataset demographic information
 CENTER_TBI_demo_info = pd.read_csv('../CENTER-TBI/DemoInjHospMedHx/data.csv',na_values = ["NA","NaN"," ", ""])
@@ -619,7 +679,7 @@ CENTER_TBI_demo_info = pd.read_csv('../CENTER-TBI/DemoInjHospMedHx/data.csv',na_
 CENTER_TBI_demo_info = CENTER_TBI_demo_info[['GUPI','PatientType','SiteCode','Age','Sex','Race','GCSScoreBaselineDerived','GOSE6monthEndpointDerived','ICURaisedICP','DecompressiveCranReason','AssociatedStudy_1','AssociatedStudy_2','AssociatedStudy_3']].reset_index(drop=True)
 
 # Filter GUPIs to daily TIL dataframe GUPIs
-CENTER_TBI_demo_info = CENTER_TBI_demo_info[CENTER_TBI_demo_info.GUPI.isin(recalc_daily_TIL_info.GUPI)].reset_index(drop=True)
+CENTER_TBI_demo_info = CENTER_TBI_demo_info[CENTER_TBI_demo_info.GUPI.isin(formatted_TIL_scores.GUPI)].reset_index(drop=True)
 
 # Add marker of refractory IC hypertension
 CENTER_TBI_demo_info['RefractoryICP'] = np.nan
@@ -641,7 +701,7 @@ CENTER_TBI_demo_info.LowResolutionSet[CENTER_TBI_demo_info.GUPI.isin(lo_res_info
 CENTER_TBI_demo_info.HighResolutionSet[CENTER_TBI_demo_info.GUPI.isin(hi_res_info[(~hi_res_info.ICPmean.isna())|(~hi_res_info.CPPmean.isna())].GUPI)] = 1
 
 # Load and prepare ordinal prediction estimates
-ordinal_prediction_estimates = pd.read_csv('../../ordinal_GOSE_prediction/APM_outputs/DEEP_v1-0/APM_deepMN_compiled_test_predictions.csv').drop(columns='Unnamed: 0')
+ordinal_prediction_estimates = pd.read_csv('../CENTER-TBI/APM_deepMN_compiled_test_predictions.csv').drop(columns='Unnamed: 0')
 ordinal_prediction_estimates = ordinal_prediction_estimates[(ordinal_prediction_estimates.GUPI.isin(CENTER_TBI_demo_info.GUPI))&(ordinal_prediction_estimates.TUNE_IDX==8)].reset_index(drop=True)
 prob_cols = [col for col in ordinal_prediction_estimates if col.startswith('Pr(GOSE=')]
 prob_matrix = ordinal_prediction_estimates[prob_cols]
@@ -658,12 +718,12 @@ ordinal_prediction_estimates = pd.pivot_table(ordinal_prediction_estimates, valu
 CENTER_TBI_demo_info = CENTER_TBI_demo_info.merge(ordinal_prediction_estimates,how='left')
 
 # Save baseline demographic and functional outcome score dataframe
-CENTER_TBI_demo_info.to_csv('../formatted_data/formatted_outcome_and_demographics.csv',index=False)
+CENTER_TBI_demo_info.to_csv(os.path.join(formatted_data_dir,'formatted_outcome_and_demographics.csv'),index=False)
 
 ### VII. Calculate TIL_1987, PILOT, and TIL_Basic
 ## Load and prepare unweighted TIL scores and components
 # Load unweighted TIL scores and components
-unweighted_daily_TIL_info = pd.read_csv('../formatted_data/formatted_unweighted_TIL_scores.csv')
+unweighted_daily_TIL_info = pd.read_csv(os.path.join(formatted_data_dir,'formatted_unweighted_TIL_scores.csv'))
 
 # Convert ICU admission/discharge timestamps to datetime variables
 unweighted_daily_TIL_info['TILDate'] = pd.to_datetime(unweighted_daily_TIL_info['TILDate'],format = '%Y-%m-%d')
@@ -674,27 +734,27 @@ unweighted_daily_TIL_info['ICUDischTimeStamp'] = pd.to_datetime(unweighted_daily
 calc_daily_TIL_1987_info = calculate_TIL_1987(unweighted_daily_TIL_info)
 
 # Save
-calc_daily_TIL_1987_info.to_csv('../formatted_data/formatted_TIL_1987_scores.csv',index=False)
+calc_daily_TIL_1987_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_1987_scores.csv'),index=False)
 
 ## Calculate PILOT
 calc_daily_PILOT_info = calculate_PILOT(unweighted_daily_TIL_info)
 
 # Save
-calc_daily_PILOT_info.to_csv('../formatted_data/formatted_PILOT_scores.csv',index=False)
+calc_daily_PILOT_info.to_csv(os.path.join(formatted_data_dir,'formatted_PILOT_scores.csv'),index=False)
 
 ## Calculate TIL_Basic
 calc_daily_TIL_Basic_info = calculate_TIL_Basic(unweighted_daily_TIL_info)
 
 # Save
-calc_daily_TIL_Basic_info.to_csv('../formatted_data/formatted_TIL_Basic_scores.csv',index=False)
+calc_daily_TIL_Basic_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_Basic_scores.csv'),index=False)
 
 ### VIII. Calculate summarised TIL metrics
 ## TIL
 # Load formatted daily TIL dataframe
-recalc_daily_TIL_info = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+formatted_TIL_scores = pd.read_csv(os.path.join(formatted_data_dir,'formatted_TIL_scores.csv'))
 
 # Filter to only keep TIL scores from the first week
-first_week_daily_TIL_info = recalc_daily_TIL_info[recalc_daily_TIL_info.TILTimepoint<=7].reset_index(drop=True)
+first_week_daily_TIL_info = formatted_TIL_scores[(formatted_TIL_scores.TILTimepoint>=1)&(formatted_TIL_scores.TILTimepoint<=7)].reset_index(drop=True)
 
 # Keep rows corresponding to TIL_max
 til_max_info = first_week_daily_TIL_info.loc[first_week_daily_TIL_info.groupby(['GUPI'])['TotalSum'].idxmax()].reset_index(drop=True).rename(columns={'TotalSum':'TILmax'})
@@ -707,10 +767,10 @@ til_mean_info = pd.pivot_table(first_week_daily_TIL_info.melt(id_vars=['GUPI','T
 
 ## PILOT
 # Load formatted daily PILOT dataframe
-calc_daily_PILOT_info = pd.read_csv('../formatted_data/formatted_PILOT_scores.csv')
+calc_daily_PILOT_info = pd.read_csv(os.path.join(formatted_data_dir,'formatted_PILOT_scores.csv'))
 
 # Filter to only keep PILOT scores from the first week
-first_week_daily_PILOT_info = calc_daily_PILOT_info[calc_daily_PILOT_info.TILTimepoint<=7].reset_index(drop=True)
+first_week_daily_PILOT_info = calc_daily_PILOT_info[(calc_daily_PILOT_info.TILTimepoint>=1)&(calc_daily_PILOT_info.TILTimepoint<=7)].reset_index(drop=True)
 
 # Keep rows corresponding to PILOT_max
 pilot_max_info = first_week_daily_PILOT_info.loc[first_week_daily_PILOT_info.groupby(['GUPI'])['PILOTSum'].idxmax()].reset_index(drop=True).rename(columns={'PILOTSum':'PILOTmax'})
@@ -723,10 +783,10 @@ pilot_mean_info = pd.pivot_table(first_week_daily_PILOT_info.melt(id_vars=['GUPI
 
 ## TIL_1987
 # Load formatted daily TIL_1987 dataframe
-calc_daily_TIL_1987_info = pd.read_csv('../formatted_data/formatted_TIL_1987_scores.csv')
+calc_daily_TIL_1987_info = pd.read_csv(os.path.join(formatted_data_dir,'formatted_TIL_1987_scores.csv'))
 
 # Filter to only keep TIL_1987 scores from the first week
-first_week_daily_TIL_1987_info = calc_daily_TIL_1987_info[calc_daily_TIL_1987_info.TILTimepoint<=7].reset_index(drop=True)
+first_week_daily_TIL_1987_info = calc_daily_TIL_1987_info[(calc_daily_TIL_1987_info.TILTimepoint>=1)&(calc_daily_TIL_1987_info.TILTimepoint<=7)].reset_index(drop=True)
 
 # Keep rows corresponding to TIL_1987_max
 til_1987_max_info = first_week_daily_TIL_1987_info.loc[first_week_daily_TIL_1987_info.groupby(['GUPI'])['TIL_1987Sum'].idxmax()].reset_index(drop=True).rename(columns={'TIL_1987Sum':'TIL_1987max'})
@@ -739,10 +799,10 @@ til_1987_mean_info = pd.pivot_table(first_week_daily_TIL_1987_info.melt(id_vars=
 
 ## TIL_Basic
 # Load formatted daily TIL_Basic dataframe
-calc_daily_TIL_Basic_info = pd.read_csv('../formatted_data/formatted_TIL_Basic_scores.csv')
+calc_daily_TIL_Basic_info = pd.read_csv(os.path.join(formatted_data_dir,'formatted_TIL_Basic_scores.csv'))
 
 # Filter to only keep TIL_Basic scores from the first week
-first_week_daily_TIL_Basic_info = calc_daily_TIL_Basic_info[calc_daily_TIL_Basic_info.TILTimepoint<=7].reset_index(drop=True)
+first_week_daily_TIL_Basic_info = calc_daily_TIL_Basic_info[(calc_daily_TIL_Basic_info.TILTimepoint>=1)&(calc_daily_TIL_Basic_info.TILTimepoint<=7)].reset_index(drop=True)
 
 # Keep rows corresponding to TIL_Basic_max
 til_basic_max_info = first_week_daily_TIL_Basic_info.loc[first_week_daily_TIL_Basic_info.groupby(['GUPI'])['TIL_Basic'].idxmax()].reset_index(drop=True).rename(columns={'TIL_Basic':'TIL_Basicmax'})
@@ -755,22 +815,22 @@ til_basic_mean_info = pd.pivot_table(first_week_daily_TIL_Basic_info.melt(id_var
 
 ## Save dataframes
 # Max dataframes
-til_max_info.to_csv('../formatted_data/formatted_TIL_max.csv',index=False)
-pilot_max_info.to_csv('../formatted_data/formatted_PILOT_max.csv',index=False)
-til_1987_max_info.to_csv('../formatted_data/formatted_TIL_1987_max.csv',index=False)
-til_basic_max_info.to_csv('../formatted_data/formatted_TIL_Basic_max.csv',index=False)
+til_max_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_max.csv'),index=False)
+pilot_max_info.to_csv(os.path.join(formatted_data_dir,'formatted_PILOT_max.csv'),index=False)
+til_1987_max_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_1987_max.csv'),index=False)
+til_basic_max_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_Basic_max.csv'),index=False)
 
 # Median dataframes
-til_median_info.to_csv('../formatted_data/formatted_TIL_median.csv',index=False)
-pilot_median_info.to_csv('../formatted_data/formatted_PILOT_median.csv',index=False)
-til_1987_median_info.to_csv('../formatted_data/formatted_TIL_1987_median.csv',index=False)
-til_basic_median_info.to_csv('../formatted_data/formatted_TIL_Basic_median.csv',index=False)
+til_median_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_median.csv'),index=False)
+pilot_median_info.to_csv(os.path.join(formatted_data_dir,'formatted_PILOT_median.csv'),index=False)
+til_1987_median_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_1987_median.csv'),index=False)
+til_basic_median_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_Basic_median.csv'),index=False)
 
 # Mean dataframes
-til_mean_info.to_csv('../formatted_data/formatted_TIL_mean.csv',index=False)
-pilot_mean_info.to_csv('../formatted_data/formatted_PILOT_mean.csv',index=False)
-til_1987_mean_info.to_csv('../formatted_data/formatted_TIL_1987_mean.csv',index=False)
-til_basic_mean_info.to_csv('../formatted_data/formatted_TIL_Basic_mean.csv',index=False)
+til_mean_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_mean.csv'),index=False)
+pilot_mean_info.to_csv(os.path.join(formatted_data_dir,'formatted_PILOT_mean.csv'),index=False)
+til_1987_mean_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_1987_mean.csv'),index=False)
+til_basic_mean_info.to_csv(os.path.join(formatted_data_dir,'formatted_TIL_Basic_mean.csv'),index=False)
 
 ### IX. Load and prepare serum sodium values from CENTER-TBI
 ## Load and prepare sodium values
@@ -787,7 +847,7 @@ sodium_values = sodium_values.groupby(['GUPI','TILDate'],as_index=False).DLSodiu
 sodium_values['ChangeInSodium'] = sodium_values.groupby(['GUPI'])['meanSodium'].diff()
 
 # Load formatted TIL values and add row index
-formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
+formatted_TIL_scores = pd.read_csv(os.path.join(formatted_data_dir,'formatted_TIL_scores.csv'))
 
 # Convert ICU admission/discharge timestamps to datetime variables
 formatted_TIL_scores['TILDate'] = pd.to_datetime(formatted_TIL_scores['TILDate'],format = '%Y-%m-%d')
@@ -811,11 +871,11 @@ sodium_TIL_dataframe['MannitolPtInd'] = sodium_TIL_dataframe.GUPI.isin(Mannitol_
 sodium_TIL_dataframe = sodium_TIL_dataframe.dropna(subset='meanSodium').drop_duplicates(ignore_index=True)
 
 ## Save prepared sodium values
-sodium_TIL_dataframe.to_csv('../formatted_data/formatted_daily_sodium_values.csv',index=False)
+sodium_TIL_dataframe.to_csv(os.path.join(formatted_data_dir,'formatted_daily_sodium_values.csv'),index=False)
 
 ## Calculate means and maxes
 # Filter to only keep values from the first week
-first_week_sodium_info = sodium_TIL_dataframe[sodium_TIL_dataframe.TILTimepoint<=7].reset_index(drop=True)
+first_week_sodium_info = sodium_TIL_dataframe[(sodium_TIL_dataframe.TILTimepoint>=1)&(sodium_TIL_dataframe.TILTimepoint<=7)].reset_index(drop=True)
 
 # Calculate meanSodium and maxSodium
 sodium_maxes_means = first_week_sodium_info.groupby('GUPI',as_index=False).meanSodium.aggregate({'meanSodium':'mean','maxSodium':'max'})
@@ -832,4 +892,4 @@ sodium_maxes_means['NoHyperosmolarPtInd'] = sodium_maxes_means.GUPI.isin(nonHOT_
 sodium_maxes_means['MannitolPtInd'] = sodium_maxes_means.GUPI.isin(Mannitol_GUPIs).astype(int)
 
 # Save values
-sodium_maxes_means.to_csv('../formatted_data/formatted_sodium_maxes_means.csv',index=False)
+sodium_maxes_means.to_csv(os.path.join(formatted_data_dir,'formatted_sodium_maxes_means.csv'),index=False)

@@ -13,8 +13,9 @@
 # VI. Figure 6: Association of TIL component items with TIL24 and other study measures.
 # VII. Figure 7: Relationship between TIL and TIL(Basic).
 # VIII. Supplementary Figure S1: Missingness of static study measures
-# IX. Supplementary Figure S2: Correlation matrices between total scores of TIL and alternative scales.
-# X. Supplementary Figure S3: Inter-item correlation matrices for daily scores of TIL and alternative scales.
+# IX. Supplementary Figure S2: Missingness of longitudinal study measures
+# X. Supplementary Figure S3: Correlation matrices between total scores of TIL and alternative scales.
+# XI. Supplementary Figure S4: Inter-item correlation matrices for daily scores of TIL and alternative scales.
 
 ### I. Initialisation
 # Import necessary libraries
@@ -33,6 +34,7 @@ library(lme4)
 library(forcats)
 library(yardstick)
 library(naniar)
+library(ggplotify)
 
 # Import custom plotting functions
 source('functions/plotting.R')
@@ -1074,41 +1076,129 @@ compiled.MCCs <- do.call(rbind, datalist) %>%
 ## Load and prepare static measures used in analysis
 # Load baseline demographic and functional outcome score dataframe
 demo.outcome <- read.csv('../formatted_data/formatted_outcome_and_demographics.csv',na.strings = c("NA","NaN","", " ")) %>%
-  select(-c(Race,ICURaisedICP,DecompressiveCranReason,LowResolutionSet,HighResolutionSet)) %>%
+  select(-c(Race,ICURaisedICP,DecompressiveCranReason,starts_with('AssociatedStudy'))) %>%
   rename(GCS=GCSScoreBaselineDerived, GOSE=GOSE6monthEndpointDerived) %>%
   rename_with(~gsub("Pr.GOSE.","Pr_GOSE_gt_", .x, fixed = TRUE))
 
-gg_miss_upset(demo.outcome, nsets = n_var_miss(demo.outcome),nintersects = NA)
+## Create UpSet plots of static feature missingness
+overall.upset.plot <- gg_miss_upset(demo.outcome %>% select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
+lores.upset.plot <- gg_miss_upset(demo.outcome %>% filter(LowResolutionSet==1) %>% select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
+hires.upset.plot <- gg_miss_upset(demo.outcome %>% filter(HighResolutionSet==1) %>% select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
+plot_grid(as.ggplot(overall.upset.plot), as.ggplot(lores.upset.plot), as.ggplot(hires.upset.plot), labels=c("A", "B", "C"), ncol = 3, nrow = 1)
 
-### Missingness of longitudinal study measures
-long.avail.counts <- read.csv('../formatted_data/longitudinal_data_availability.csv',na.strings = c("NA","NaN","", " ")) %>%
-  filter(!(Type %in% c('CPPAvailable','ConcernCPPAvailable'))) %>%
-  mutate(Type = case_when(str_starts(Type,'Concern')~'Physician Concerns of ICP and CPP',
-                          Type %in% c('CPPAvailable','ICPAvailable')~'ICP and CPP',
-                          Type=='RemainingInICU'~'Remaining in ICU',
-                          Type=='TILAvailable'~'TIL'),
-         Type = factor(Type,levels=c('Remaining in ICU',
-                                    'TIL',
-                                    'ICP and CPP',
-                                    'Physician Concerns of ICP and CPP')),
-         Substudy = case_when(Substudy=='FullSet'~'TIL validation population',
-                              Substudy=='LowResolutionSet'~'TIL-ICPEH population',
-                              Substudy=='HighResolutionSet'~'TIL-ICPHR population'),
-         Substudy = factor(Substudy,levels=c('TIL validation population',
-                                             'TIL-ICPEH population',
-                                             'TIL-ICPHR population')))
+### IX. Supplementary Figure S2: Missingness of longitudinal study measures
+## Prepare longitudinal
+long.avail.counts <- read.csv('../results/longitudinal_data_availability.csv',na.strings = c("NA","NaN","", " ")) %>%
+  mutate(Combination = case_when(Combination=='TotalSumMiss;TILPhysicianConcernsICPMiss;ICPMiss'~'TIL, ICP/CPP, and physician concerns of ICP/CPP',
+                                 Combination=='TotalSumMiss;TILPhysicianConcernsICPMiss;ICPNonMiss'~'TIL and physician concerns of ICP/CPP',
+                                 Combination=='TotalSumNonMiss;TILPhysicianConcernsICPMiss;ICPMiss'~'ICP/CPP and physician concerns of ICP/CPP',
+                                 Combination=='TotalSumNonMiss;TILPhysicianConcernsICPMiss;ICPNonMiss'~'Physician concerns of ICP/CPP',
+                                 Combination=='TotalSumNonMiss;TILPhysicianConcernsICPNonMiss;ICPMiss'~'ICP/CPP',
+                                 Combination=='TotalSumNonMiss;TILPhysicianConcernsICPNonMiss;ICPNonMiss'~'None'),
+         Substudy = case_when(Set=='OverallSet'~'TIL validation population',
+                              Set=='LowResolutionSet'~'TIL-ICPEH population',
+                              Set=='HighResolutionSet'~'TIL-ICPHR population'),
+         TILTimepoint = paste0('Day ',TILTimepoint),
+         PropLabel = sprintf('%.0f%%',100*Proportion)) %>%
+  mutate(Combination = fct_rev(factor(Combination,levels=c('None',
+                                                           'Physician concerns of ICP/CPP',
+                                                           'ICP/CPP',
+                                                           'ICP/CPP and physician concerns of ICP/CPP',
+                                                           'TIL and physician concerns of ICP/CPP',
+                                                           'TIL, ICP/CPP, and physician concerns of ICP/CPP')))) %>%
+  arrange(fct_relevel(Combination, rev(levels(Combination))))
 
-long.avail.counts %>%
-  ggplot() +
-  geom_line(aes(x=DaysSinceICUAdmission,y=n_value,color=Type)) +
+## Create and save plot of missing value combinations per day
+# Create ggplot object
+long.missingness.plot <- long.avail.counts %>%
+  ggplot(aes(x=TILTimepoint)) +
+  geom_col(aes(fill=Combination,y=Count),
+           width = 0.85) +
   facet_wrap(~Substudy,
              ncol=3,
              scales = 'free') +
-  coord_cartesian(ylim = c(0,873)) +
+  coord_cartesian(ylim = c(0,900)) +
+  scale_y_continuous(breaks = seq(0,875,125),expand = expansion(mult = c(0,.0275))) +
+  geom_text(data=long.avail.counts,
+            aes(label = PropLabel,y=Count),
+            position = position_stack(vjust = .5),
+            color='white',
+            size=6/.pt) +
+  geom_text(data=long.avail.counts %>% select(TILTimepoint,Substudy,TotalCount) %>% unique(),
+            aes(label = TotalCount,y=TotalCount),
+            vjust = -.5,
+            color='black',
+            size=6/.pt) +
+  scale_fill_manual(values=rev(c('#003f5c','#444e86','#955196','#dd5182','#ff6e54','#ffa600'))) +
+  guides(fill = guide_legend(title='Missing value combination',reverse = T,nrow=2,byrow = F,)) +
+  ylab("Count (n)") +
   theme_minimal(base_family = 'Roboto Condensed') +
-  theme(legend.position = 'bottom')
+  theme(panel.grid.minor.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 7, color = 'black',face='bold',margin = margin(r = 0,t = 0,b = 0)),
+        legend.title = element_text(size = 7, color = 'black',face = 'bold'),
+        axis.text.y = element_text(size = 6, color = 'black',margin = margin(0,0,0,0)),
+        legend.text = element_text(size=6,color = 'black',margin = margin(r = 0)),
+        axis.title.y = element_text(size = 7, color = 'black',face='bold'),
+        legend.position = 'bottom',
+        legend.key.size = unit(1/.pt,"line"),
+        strip.text = element_text(size = 7, color = "black",face = 'bold'),
+        legend.margin=margin(0,0,0,0))
 
-### IX. Supplementary Figure S2: Correlation matrices between total scores of TIL and alternative scales.
+# Create directory for current date and save missing value combinations per day plot
+dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
+ggsave(file.path('../plots',Sys.Date(),'longitudinal_missingness_plot.svg'),long.missingness.plot,device=svglite,units='in',dpi=600,width=7.5,height = 3.15)
+
+## Load and format missingness analysis table for supplementary tables
+long.miss.table <- read.csv('../results/longitudinal_missingness_analysis.csv') %>%
+  mutate(Substudy = case_when(Substudy=='OverallSet'~'TIL validation population',
+                              Substudy=='LowResolutionSet'~'TIL-ICPEH population',
+                              Substudy=='HighResolutionSet'~'TIL-ICPHR population'),
+         Substudy = factor(Substudy,
+                           levels = c('TIL validation population',
+                                      'TIL-ICPEH population',
+                                      'TIL-ICPHR population')),
+         MissingVariable = case_when(MissingVariable=='ICPmean'~'ICP/CPP',
+                                     MissingVariable=='TILPhysicianConcernsICP'~'Physician concerns of ICP/CPP',
+                                     MissingVariable=='TotalSum'~'TIL24'),
+         MissingVariable = factor(MissingVariable,
+                                  levels = c('TIL24',
+                                             'ICP/CPP',
+                                             'Physician concerns of ICP/CPP')),
+         value = case_when(str_starts(variable,'Pr')~variable,
+                           variable=='RefractoryICP'~'',
+                           T~value),
+         variable = case_when(variable=='GCSSeverity'~'Baseline GCS',
+                              variable=='MarshallCT'~'Marshall CT',
+                              variable=='GOSE6monthEndpointDerived'~'Six-month GOSE',
+                              variable=='SiteCode'~'Centre distribution*',
+                              variable=='RefractoryICP'~'Refractory intracranial hypertension',
+                              str_starts(variable,'Pr')~'Baseline functional prognosis',
+                              T~variable),
+         variable = factor(variable,
+                           levels = c('Centre distribution*',
+                                      'Age',
+                                      'Sex',
+                                      'Baseline GCS',
+                                      'Marshall CT',
+                                      'Refractory intracranial hypertension',
+                                      'Six-month GOSE',
+                                      'Baseline functional prognosis',
+                                      'TILmax',
+                                      'TILmedian',
+                                      'TIL24')),
+         Significant = p_val < 0.05,
+         p_val = case_when(is.na(p_val)~'',
+                           T~sprintf('%.3f',p_val)),
+         DaysSinceICUAdmission = paste0('Day ',DaysSinceICUAdmission)) %>%
+  arrange(Substudy,DaysSinceICUAdmission,MissingVariable,variable,value,Set) %>%
+  pivot_wider(names_from=c(Set),
+              values_from=c(n,FormattedLabel)) %>%
+  relocate(Substudy,DaysSinceICUAdmission,MissingVariable,n_In,n_Out,variable,value,FormattedLabel_In,FormattedLabel_Out)
+
+write.csv(long.miss.table,'../results/longitudinal_missingness_table.csv',row.names = F)
+
+### X. Supplementary Figure S3: Correlation matrices between total scores of TIL and alternative scales.
 ## Load and prepare inter-scale Spearman's correlation results
 # Load formatted Spearman's rho values for inter-scale comparisons
 inter.scale.spearmans <- read.csv('../bootstrapping_results/CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
@@ -1236,7 +1326,7 @@ daily.scale.correlations <- inter.scale.rmcorrs %>%
 dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
 ggsave(file.path('../plots',Sys.Date(),'daily_scale_correlations.svg'),daily.scale.correlations,device=svglite,units='in',dpi=600,width=2.5,height = 2.73)
 
-### X. Supplementary Figure S3: Inter-item correlation matrices for daily scores of TIL and alternative scales.
+### XI. Supplementary Figure S4: Inter-item correlation matrices for daily scores of TIL and alternative scales.
 ## Load and prepare inter-item repeated-measures correlation coefficients
 # Define item names
 item.names <- c('Positioning','Sedation','Neuromuscular','Paralysis','CSFDrainage','Ventricular','FluidLoading','Vasopressor','Hyperventilation','Ventilation','Mannitol','Hypertonic','Temperature','ICPSurgery','DecomCraniectomy')

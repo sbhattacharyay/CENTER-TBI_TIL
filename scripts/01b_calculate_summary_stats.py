@@ -9,9 +9,10 @@
 # II. Load and prepare summary characteristics of full TIL dataset
 # III. Calculate summary statistics and statistical tests of numerical variables
 # IV. Calculate summary statistics and statistical tests of categorical variables
-# V. Assess missingness of TIL scores
+# V. Prepare missingness report in longitudinal measures
 
 ### I. Initialisation
+## Import libraries and prepare environment
 # Fundamental libraries
 import os
 import re
@@ -36,6 +37,16 @@ warnings.filterwarnings(action="ignore")
 
 # StatsModel methods
 from statsmodels.stats.anova import AnovaRM
+
+# Custom methods
+from functions.analysis import long_missingness_analysis
+
+## Initialise directory placeholders
+# Initialise directory to store formatted data
+formatted_data_dir = '../formatted_data'
+
+# Initialise results directory
+results_dir = '../results'
 
 ### II. Load and prepare summary characteristics of full TIL dataset
 ## Prepare summary statistics of full TIL dataset
@@ -130,8 +141,8 @@ num_summary_stats = num_summary_stats.merge(num_charset.groupby(['variable','Set
 # # Filter rows to only include in-set results
 # num_summary_stats = num_summary_stats[num_summary_stats.SetIndicator==1].reset_index(drop=True)
 
-## Save results
-num_summary_stats.to_excel('../formatted_data/numerical_summary_statistics.xlsx')
+## Save results to results dataframe
+num_summary_stats.to_excel(os.path.join(results_dir,'numerical_summary_statistics.xlsx'))
 
 ### IV. Calculate summary statistics and statistical tests of categorical variables
 ## Filter and prepare categorical characteristics
@@ -153,14 +164,183 @@ cat_summary_stats['FormattedProp'] = cat_summary_stats['n'].astype(str)+' ('+cat
 cat_summary_stats = cat_summary_stats.merge(cat_charset.groupby(['variable','Set'],as_index=False).apply(lambda x: stats.chi2_contingency(pd.crosstab(x["value"],x["SetIndicator"])).pvalue).rename(columns={None:'p_val'}),how='left')
 
 ## Save results
-cat_summary_stats.to_excel('../formatted_data/categorical_summary_statistics.xlsx')
+cat_summary_stats.to_excel(os.path.join(results_dir,'categorical_summary_statistics.xlsx'))
 
-### V. Assess missingness of TIL scores
+### V. Prepare missingness report in longitudinal measures
 ## Load and prepare pertinent dataframes
+# Load formatted demographics and outcome dataframe to extract set assignment
+CENTER_TBI_demo_info = pd.read_csv('../formatted_data/formatted_outcome_and_demographics.csv',na_values = ["NA","NaN","NaT"," ", ""])
+CENTER_TBI_demo_info['OverallSet'] = 1
+
 # Load formatted TIL score dataframe
 formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv',na_values = ["NA","NaN","NaT"," ", ""])
 
-# Load ICU timestamp dataframe and filter to study population
-CENTER_TBI_datetime = pd.read_csv('../timestamps/adm_disch_timestamps.csv')
-CENTER_TBI_datetime = CENTER_TBI_datetime[CENTER_TBI_datetime.GUPI.isin(formatted_TIL_scores.GUPI)].reset_index(drop=True)
+# Load and prepare formatted low-resolution neuromonitoring values over time
+formatted_low_resolution_values = pd.read_csv('../formatted_data/formatted_low_resolution_values.csv',na_values = ["NA","NaN","NaT"," ", ""])
 
+# Load and prepare formatted high-resolution neuromonitoring values over time
+formatted_high_resolution_values = pd.read_csv('../formatted_data/formatted_high_resolution_values.csv',na_values = ["NA","NaN","NaT"," ", ""])
+
+## Identify expected cases that are missing
+# Filter to study window
+expected_combinations = formatted_TIL_scores[(formatted_TIL_scores.TILTimepoint>=1)&(formatted_TIL_scores.TILTimepoint<=7)].reset_index(drop=True)[['GUPI','TILTimepoint','TotalSum','TILPhysicianConcernsICP']]
+
+# Add information of missingess of low-resolution ICP
+expected_combinations = expected_combinations.merge(formatted_low_resolution_values[['GUPI','TILTimepoint','ICPmean']],how='left').rename(columns={'ICPmean':'ICP_EH'})
+
+# Add information of missingess of high-resolution ICP
+expected_combinations = expected_combinations.merge(formatted_high_resolution_values[['GUPI','TILTimepoint','ICPmean']],how='left').rename(columns={'ICPmean':'ICP_HR'})
+
+# Add set assignment information to merged expected combinations
+expected_combinations = expected_combinations.merge(CENTER_TBI_demo_info[['GUPI','OverallSet','LowResolutionSet','HighResolutionSet']],how='left')
+
+## Create summary statistics of longitudinal missingess
+# Pivot set assignment to longer form
+expected_combinations = expected_combinations.melt(id_vars=['GUPI','TILTimepoint','TotalSum','TILPhysicianConcernsICP','ICP_EH','ICP_HR'],value_vars=['OverallSet','LowResolutionSet','HighResolutionSet'],value_name='SetIndicator',var_name='Set')
+
+# Melt variable values to longer form
+expected_combinations = expected_combinations.melt(id_vars=['Set','SetIndicator','GUPI','TILTimepoint'],value_vars=['TotalSum','TILPhysicianConcernsICP','ICP_EH','ICP_HR'],value_name='Value',var_name='Variable')
+
+# Add missingness indicator
+expected_combinations['MissingValues'] = expected_combinations['Value'].isna().map({True:'Miss',False:'NonMiss'})
+expected_combinations['MissingValues'] = expected_combinations['Variable']+expected_combinations['MissingValues']
+
+# Remove implausible combinations
+expected_combinations = expected_combinations[(~expected_combinations.Variable.str.startswith('ICP'))|((expected_combinations.Variable.str.endswith('EH'))&(expected_combinations.Set=='LowResolutionSet'))|((expected_combinations.Variable.str.endswith('HR'))&(expected_combinations.Set=='HighResolutionSet'))]
+expected_combinations = expected_combinations[expected_combinations.SetIndicator==1].reset_index(drop=True)
+
+# Remove '_HR' and '_EH' suffixes
+expected_combinations['MissingValues'] = expected_combinations['MissingValues'].str.replace('_EH','')
+expected_combinations['MissingValues'] = expected_combinations['MissingValues'].str.replace('_HR','')
+
+# Create missingness groups per patient
+patient_missing_combos = expected_combinations.groupby(['Set','SetIndicator','TILTimepoint','GUPI'],as_index=False)['MissingValues'].apply(';'.join).reset_index()
+patient_missing_combos['MissingValues'][patient_missing_combos['MissingValues']=='TotalSumNonMiss;TILPhysicianConcernsICPNonMiss'] = 'TotalSumNonMiss;TILPhysicianConcernsICPNonMiss;ICPNonMiss'
+patient_missing_combos['MissingValues'][patient_missing_combos['MissingValues']=='TotalSumNonMiss;TILPhysicianConcernsICPMiss'] = 'TotalSumNonMiss;TILPhysicianConcernsICPMiss;ICPNonMiss'
+patient_missing_combos['MissingValues'][patient_missing_combos['MissingValues']=='TotalSumMiss;TILPhysicianConcernsICPMiss'] = 'TotalSumMiss;TILPhysicianConcernsICPMiss;ICPNonMiss'
+
+# Calculate number missing out of total available
+missing_combination_counts = patient_missing_combos.groupby(['Set','TILTimepoint','MissingValues'],as_index=False)['GUPI'].count().rename(columns={'GUPI':'Count','MissingValues':'Combination'})
+missing_combination_counts['TotalCount'] = missing_combination_counts.groupby(['Set','TILTimepoint'])['Count'].transform('sum')
+
+# Add a formatted column designating percent per combination
+missing_combination_counts['Proportion'] = (missing_combination_counts.Count/missing_combination_counts.TotalCount)
+
+# Reorder combined count dataframe
+missing_combination_counts = missing_combination_counts.sort_values(['Set','Combination','TILTimepoint'],ignore_index=True)
+
+# Save combined count dataframe
+missing_combination_counts.to_csv(os.path.join(results_dir,'longitudinal_data_availability.csv'),index=False)
+
+## Calculate number of patients remaining at points between admission and discharge
+# Load timestamp dataframe
+CENTER_TBI_datetime = pd.read_csv('../timestamps/adm_disch_timestamps.csv')
+
+# Convert ICU admission/discharge timestamps to datetime variables
+CENTER_TBI_datetime['ICUAdmTimeStamp'] = pd.to_datetime(CENTER_TBI_datetime['ICUAdmTimeStamp'],format = '%Y-%m-%d %H:%M:%S' )
+CENTER_TBI_datetime['ICUDischTimeStamp'] = pd.to_datetime(CENTER_TBI_datetime['ICUDischTimeStamp'],format = '%Y-%m-%d %H:%M:%S' )
+CENTER_TBI_datetime['ICUDurationDays'] = CENTER_TBI_datetime['ICUDurationHours']/24
+CENTER_TBI_datetime = CENTER_TBI_datetime.merge(CENTER_TBI_demo_outcome[['GUPI','LowResolutionSet','HighResolutionSet']],how='left')
+CENTER_TBI_datetime['OverallSet'] = 1
+
+# Filter timestamp dataframe to patients in study set
+CENTER_TBI_datetime = CENTER_TBI_datetime[CENTER_TBI_datetime.GUPI.isin(formatted_TIL_scores.GUPI)].reset_index(drop=True)
+CENTER_TBI_datetime = CENTER_TBI_datetime.melt(id_vars=['GUPI','ICUDurationDays'], value_vars=['LowResolutionSet','HighResolutionSet','OverallSet'],var_name='Set')
+CENTER_TBI_datetime = CENTER_TBI_datetime[CENTER_TBI_datetime['value']==1].drop(columns='value').reset_index(drop=True)
+
+# Create a dummy vector for points between 0 and 7 days post-admission
+days_vector = np.linspace(0,7,num=1000)
+
+# Create empty running lists to store values
+remaining_df = []
+
+# Iterate through time vector
+for curr_day in tqdm(days_vector,'Calculating n remaining over time'):
+    # Count number of patients remaining at current timepoint
+    curr_remaining_count = CENTER_TBI_datetime[CENTER_TBI_datetime.ICUDurationDays>=curr_day].groupby('Set',as_index=False).ICUDurationDays.count().rename(columns={'ICUDurationDays':'NonMissingCount'})
+    
+    # Format current count dataframe
+    curr_remaining_count['DaysSinceICUAdmission'] = curr_day
+    curr_remaining_count['Type'] = 'RemainingInICU'
+
+    # Add dataframe to running list
+    remaining_df.append(curr_remaining_count)
+
+# Organise lists into dataframe
+counts_over_time = pd.concat(remaining_df,ignore_index=True)
+
+# Reorder columns of dataframe and sort
+counts_over_time = counts_over_time[['DaysSinceICUAdmission','NonMissingCount','Type','Set']]
+
+# Save remaining in ICU count dataframe
+counts_over_time.to_csv(os.path.join(results_dir,'remaining_in_icu_curve.csv'),index=False)
+
+## Calculate significance of baseline characteristic differences associated with longitudinal missingess
+# Load and prepare formatted TIL scores over time
+formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv',na_values = ["NA","NaN","NaT"," ", ""])
+formatted_TIL_scores = formatted_TIL_scores[(formatted_TIL_scores.TILTimepoint<=7)&(formatted_TIL_scores.TILTimepoint>=1)].reset_index(drop=True)
+formatted_TIL_scores = formatted_TIL_scores.merge(CENTER_TBI_demo_outcome[['GUPI','LowResolutionSet','HighResolutionSet']],how='left')
+formatted_TIL_scores['OverallSet'] = 1
+
+# Format substudy assignment for TIL dataframe
+formatted_TIL_scores = formatted_TIL_scores.melt(id_vars=['GUPI','TILTimepoint','TotalSum','TILPhysicianConcernsCPP','TILPhysicianConcernsICP'], value_vars=['LowResolutionSet','HighResolutionSet','OverallSet'],var_name='Set')
+formatted_TIL_scores = formatted_TIL_scores[formatted_TIL_scores['value']==1].drop(columns='value').reset_index(drop=True)
+
+# Load and prepare formatted low-resolution neuromonitoring values over time
+formatted_low_resolution_values = pd.read_csv('../formatted_data/formatted_low_resolution_values.csv',na_values = ["NA","NaN","NaT"," ", ""])
+formatted_low_resolution_values = formatted_low_resolution_values[formatted_low_resolution_values.TILTimepoint<=7].reset_index(drop=True)
+
+# Load and prepare formatted high-resolution neuromonitoring values over time
+formatted_high_resolution_values = pd.read_csv('../formatted_data/formatted_high_resolution_values.csv',na_values = ["NA","NaN","NaT"," ", ""])
+formatted_high_resolution_values = formatted_high_resolution_values[formatted_high_resolution_values.TILTimepoint<=7].reset_index(drop=True)
+
+# Select characteristics for calculation
+char_set = CENTER_TBI_demo_outcome[['GUPI', 'SiteCode', 'Age', 'Sex','GCSSeverity', 'GOSE6monthEndpointDerived','RefractoryICP','MarshallCT','Pr(GOSE>1)', 'Pr(GOSE>3)','Pr(GOSE>4)', 'Pr(GOSE>5)', 'Pr(GOSE>6)', 'Pr(GOSE>7)','TILmax','TILmedian']]
+
+# Filter datasets by substudy
+overall_dataset = formatted_TIL_scores[formatted_TIL_scores.Set=='OverallSet'].reset_index(drop=True)
+lores_dataset = formatted_TIL_scores[formatted_TIL_scores.Set=='LowResolutionSet'].reset_index(drop=True).merge(formatted_low_resolution_values[['GUPI','TILTimepoint','TotalSum','ICPmean']],how='left')
+hires_dataset = formatted_TIL_scores[formatted_TIL_scores.Set=='HighResolutionSet'].reset_index(drop=True).merge(formatted_high_resolution_values[['GUPI','TILTimepoint','TotalSum','ICPmean']],how='left')
+
+# Calculate characteristic differences
+overall_num_char_diffs, overall_cat_char_diffs = long_missingness_analysis(char_set,overall_dataset,[1,2,3,4,5,6,7],['TotalSum','TILPhysicianConcernsICP'])
+lores_num_char_diffs, lores_cat_char_diffs = long_missingness_analysis(char_set,lores_dataset,[1,2,3,4,5,6,7],['TotalSum','TILPhysicianConcernsICP','ICPmean'])
+hires_num_char_diffs, hires_cat_char_diffs = long_missingness_analysis(char_set,hires_dataset,[1,2,3,4,5,6,7],['TotalSum','TILPhysicianConcernsICP','ICPmean'])
+
+# Add set code to all result dataframes
+overall_num_char_diffs['Substudy'] = 'OverallSet'
+overall_cat_char_diffs['Substudy'] = 'OverallSet'
+lores_num_char_diffs['Substudy'] = 'LowResolutionSet'
+lores_cat_char_diffs['Substudy'] = 'LowResolutionSet'
+hires_num_char_diffs['Substudy'] = 'HighResolutionSet'
+hires_cat_char_diffs['Substudy'] = 'HighResolutionSet'
+
+# Append character and categorical dataframes
+num_char_diffs = pd.concat([overall_num_char_diffs,lores_num_char_diffs,hires_num_char_diffs],ignore_index=False)
+cat_char_diffs = pd.concat([overall_cat_char_diffs,lores_cat_char_diffs,hires_cat_char_diffs],ignore_index=False)
+
+# Format salient details
+num_char_diffs['FormattedLabel'] = num_char_diffs['median'].round(1).astype(str)+' ('+num_char_diffs['q1'].round(1).astype(str)+'–'+num_char_diffs['q3'].round(1).astype(str)+')'
+num_char_diffs['value'] = ''
+cat_char_diffs['FormattedLabel'] = cat_char_diffs['n'].astype(str)+' ('+cat_char_diffs['proportion'].round().astype(int).astype(str)+'%)'
+cat_char_diffs = cat_char_diffs.drop(columns=['n']).rename(columns={'n_total':'n'})
+
+# Concatenate formatted results dataframe
+char_diffs = pd.concat([num_char_diffs[['Substudy','DaysSinceICUAdmission','MissingVariable','Set','variable','value','n','FormattedLabel','p_val']],
+                        cat_char_diffs[['Substudy','DaysSinceICUAdmission','MissingVariable','Set','variable','value','n','FormattedLabel','p_val']]],ignore_index=False)
+
+# Calculate number of unique centres per combination
+site_code_replacements = char_diffs[char_diffs['variable']=='SiteCode'].groupby(['Substudy','DaysSinceICUAdmission','MissingVariable','Set','variable','n','p_val'],as_index=False)['value'].count().rename(columns={'value':'FormattedLabel'})
+site_code_replacements['value'] = ''
+
+# Replace side code information
+char_diffs = pd.concat([char_diffs[char_diffs['variable']!='SiteCode'].reset_index(drop=True),site_code_replacements],ignore_index=True)
+
+# Reorder characteristic difference dataframe
+char_diffs = char_diffs.sort_values(by=['Substudy','DaysSinceICUAdmission','MissingVariable','variable','value','Set'],ignore_index=True)
+
+# Remove redundant rows
+char_diffs = char_diffs[(~((char_diffs['variable']=='Sex')&(char_diffs['value']=='M')))&(~((char_diffs['variable']=='RefractoryICP')&(char_diffs['value']=='0.0')))].reset_index(drop=True)
+
+# Save characteristic differences dataframe
+char_diffs.to_csv(os.path.join(results_dir,'longitudinal_missingness_analysis.csv'),index=False)
