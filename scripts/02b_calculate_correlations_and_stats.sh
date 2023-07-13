@@ -8,7 +8,7 @@
 #SBATCH --array=0-999
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=sb2406@cam.ac.uk
-#SBATCH --output=/home/sb2406/CENTER-TBI_TIL/bootstrapping_results/hpc_logs/TIL_correlations_trial_%a.out
+#SBATCH --output=/home/sb2406/CENTER-TBI_TIL/results/bootstrapping_results/hpc_logs/TIL_correlations_trial_%a.out
 
 . /etc/profile.d/modules.sh                # Leave this line (enables the module command)
 module purge

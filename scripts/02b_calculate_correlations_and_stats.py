@@ -33,23 +33,37 @@ from collections import Counter
 from scipy.stats import spearmanr
 warnings.filterwarnings(action="ignore")
 
+# SciKit-Learn methods
+from sklearn.utils import resample
+from sklearn.metrics import mutual_info_score, roc_curve, roc_auc_score, matthews_corrcoef, accuracy_score
+from sklearn.feature_selection._mutual_info import mutual_info_regression, _estimate_mi
+
 # StatsModels libraries
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
 # Custom methods
-from functions.analysis import spearman_rho, melm_R2, calculate_spearman_rhos, calculate_rmcorr, calc_melm, calc_ICP_Na_melm
+from functions.analysis import calculate_spearman_rhos, calculate_rmcorr, calc_melm, calculate_dynamic_spearman_rhos, calc_ROC
 
-# Initialise directory for storing bootstrapping resamples
-bs_dir = '../bootstrapping_results/resamples'
+# Define results directory
+results_dir = '../results'
+
+# Define formatted directory
+formatted_data_dir = '../formatted_data'
+
+# Define directory for storing bootstrapping resamples within results directory
+bs_dir = os.path.join(results_dir,'bootstrapping_results','resamples')
 
 # Initalise subdirectory to store individual resample results
-bs_results_dir = '../bootstrapping_results/results'
+bs_results_dir = os.path.join(results_dir,'bootstrapping_results','results')
 os.makedirs(bs_results_dir,exist_ok=True)
 
 ### II. Calculate correlation and statistics based on provided bootstrapping resample row index
 # Argument-induced bootstrapping functions
 def main(array_task_id):
+
+    ## Save current resampling index value
+    curr_rs_idx = array_task_id+1
 
     ## Initalise variables of validation population sub-directories
     # Designate sub-directory for TIL validation population
@@ -61,11 +75,11 @@ def main(array_task_id):
     # Designate sub-directory for TIL-ICP_HR validation population
     TIL_ICPHR_dir = os.path.join(bs_dir,'TIL_ICPHR')
 
-    ## Load bootstrapping resamples and select GUPIs of current resample_idx
+    ## Load bootstrapping resamples and select GUPIs and imputation index of current resample_idx
     # Load and extract TIL validation resamples
-    curr_rs_idx = array_task_id+1
     TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'TIL_validation_resamples.pkl'))
     curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
+    curr_imp_index = TIL_validation_bs_resamples.IMPUTATION_IDX[TIL_validation_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].values[0]
     # TIL_validation_bs_resamples = pd.read_pickle(os.path.join(TIL_validation_dir,'remaining_TIL_validation_resamples.pkl'))
     # curr_rs_idx = TIL_validation_bs_resamples.RESAMPLE_IDX[array_task_id]
     # curr_TIL_validation_resamples = TIL_validation_bs_resamples[TIL_validation_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
@@ -85,245 +99,172 @@ def main(array_task_id):
     # curr_TIL_ICPHR_resamples = TIL_ICPHR_bs_resamples[TIL_ICPHR_bs_resamples.RESAMPLE_IDX==(curr_rs_idx)].GUPIs.values[0]
     
     ## Load and filter information dataframes
-    # Formatted scale scores
-    raw_formatted_TIL_scores = pd.read_csv('../formatted_data/formatted_TIL_scores.csv')
-    raw_formatted_TIL_scores = raw_formatted_TIL_scores[raw_formatted_TIL_scores.TILTimepoint<=7].reset_index(drop=True)
-    raw_formatted_TIL_1987_scores = pd.read_csv('../formatted_data/formatted_TIL_1987_scores.csv')
-    raw_formatted_TIL_1987_scores = raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.TILTimepoint<=7].reset_index(drop=True)
-    raw_formatted_PILOT_scores = pd.read_csv('../formatted_data/formatted_PILOT_scores.csv')
-    raw_formatted_PILOT_scores = raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.TILTimepoint<=7].reset_index(drop=True)
-    raw_formatted_TIL_Basic_scores = pd.read_csv('../formatted_data/formatted_TIL_Basic_scores.csv')
-    raw_formatted_TIL_Basic_scores = raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.TILTimepoint<=7].reset_index(drop=True)
-    raw_formatted_uwTIL_scores = pd.read_csv('../formatted_data/formatted_unweighted_TIL_scores.csv')
-    raw_formatted_uwTIL_scores = raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.TILTimepoint<=7].reset_index(drop=True)
-    raw_formatted_uwTIL_scores['uwTILSum'] = raw_formatted_uwTIL_scores.CSFDrainage + raw_formatted_uwTIL_scores.DecomCraniectomy + raw_formatted_uwTIL_scores.FluidLoading + raw_formatted_uwTIL_scores.Hypertonic + raw_formatted_uwTIL_scores.ICPSurgery + raw_formatted_uwTIL_scores.Mannitol + raw_formatted_uwTIL_scores.Neuromuscular + raw_formatted_uwTIL_scores.Positioning + raw_formatted_uwTIL_scores.Sedation + raw_formatted_uwTIL_scores.Temperature + raw_formatted_uwTIL_scores.Vasopressor + raw_formatted_uwTIL_scores.Ventilation
+    # Define directory of current imputation
+    imp_dir = os.path.join(formatted_data_dir,'imputed_sets','imp'+str(curr_imp_index).zfill(3))
+    
+    # Formatted dynamic variable set
+    raw_dynamic_var_set = pd.read_csv(os.path.join(imp_dir,'dynamic_var_set.csv'))
 
-    # Create a pre-filtered dataframe of all scale sum scores
-    raw_all_total_scores = raw_formatted_uwTIL_scores[['GUPI','TILTimepoint','TILDate','TotalSum','uwTILSum']].merge(raw_formatted_TIL_1987_scores[['GUPI','TILTimepoint','TILDate','TIL_1987Sum']]).merge(raw_formatted_PILOT_scores[['GUPI','TILTimepoint','TILDate','PILOTSum']]).merge(raw_formatted_TIL_Basic_scores[['GUPI','TILTimepoint','TILDate','TIL_Basic']])
+    # Filter dynamic variable set by (sub-)population
+    global_dynamic_var_set = raw_dynamic_var_set[raw_dynamic_var_set.GUPI.isin(curr_TIL_validation_resamples)].reset_index(drop=True)
+    lores_dynamic_var_set = raw_dynamic_var_set[raw_dynamic_var_set.GUPI.isin(curr_TIL_ICPEH_resamples)].reset_index(drop=True)
+    hires_dynamic_var_set = raw_dynamic_var_set[raw_dynamic_var_set.GUPI.isin(curr_TIL_ICPHR_resamples)].reset_index(drop=True)
 
-    # Formatted scale maxes
-    raw_formatted_TIL_max = pd.read_csv('../formatted_data/formatted_TIL_max.csv')
-    raw_formatted_TIL_1987_max = pd.read_csv('../formatted_data/formatted_TIL_1987_max.csv')
-    raw_formatted_PILOT_max = pd.read_csv('../formatted_data/formatted_PILOT_max.csv')
-    raw_formatted_TIL_Basic_max = pd.read_csv('../formatted_data/formatted_TIL_Basic_max.csv')
-    raw_formatted_uwTIL_max = raw_formatted_uwTIL_scores.loc[raw_formatted_uwTIL_scores.groupby(['GUPI'])['uwTILSum'].idxmax()].reset_index(drop=True).rename(columns={'uwTILSum':'uwTILmax'})
-    raw_combined_max_scores = raw_formatted_TIL_max[['GUPI','TILmax']].merge(raw_formatted_TIL_1987_max[['GUPI','TIL_1987max']]).merge(raw_formatted_PILOT_max[['GUPI','PILOTmax']]).merge(raw_formatted_TIL_Basic_max[['GUPI','TIL_Basicmax']]).merge(raw_formatted_uwTIL_max[['GUPI','uwTILmax']])
+    # Formatted static variable set
+    raw_static_var_set = pd.read_csv(os.path.join(imp_dir,'static_var_set.csv'))
 
-    # Formatted scale means
-    raw_formatted_TIL_mean = pd.read_csv('../formatted_data/formatted_TIL_mean.csv')
-    raw_formatted_TIL_1987_mean = pd.read_csv('../formatted_data/formatted_TIL_1987_mean.csv')
-    raw_formatted_PILOT_mean = pd.read_csv('../formatted_data/formatted_PILOT_mean.csv')
-    raw_formatted_TIL_Basic_mean = pd.read_csv('../formatted_data/formatted_TIL_Basic_mean.csv')
-    raw_formatted_uwTIL_mean = pd.pivot_table(raw_formatted_uwTIL_scores.melt(id_vars=['GUPI','TILTimepoint','TILDate','ICUAdmTimeStamp','ICUDischTimeStamp']).groupby(['GUPI','variable'],as_index=False)['value'].mean(), values = 'value', index=['GUPI'], columns = 'variable').reset_index().rename(columns={'uwTILSum':'uwTILmean'})
-    raw_combined_mean_scores = raw_formatted_TIL_mean[['GUPI','TILmean']].merge(raw_formatted_TIL_1987_mean[['GUPI','TIL_1987mean']]).merge(raw_formatted_PILOT_mean[['GUPI','PILOTmean']]).merge(raw_formatted_TIL_Basic_mean[['GUPI','TIL_Basicmean']]).merge(raw_formatted_uwTIL_mean[['GUPI','uwTILmean']])
+    # Modify baseline prognosis score column names
+    og_prog_names = ['Pr.GOSE.1.', 'Pr.GOSE.3.', 'Pr.GOSE.4.', 'Pr.GOSE.5.', 'Pr.GOSE.6.','Pr.GOSE.7.']
+    new_prog_names = ['Pr(GOSE>1)', 'Pr(GOSE>3)', 'Pr(GOSE>4)', 'Pr(GOSE>5)', 'Pr(GOSE>6)','Pr(GOSE>7)']
+    raw_static_var_set = raw_static_var_set.rename(columns=dict(zip(og_prog_names, new_prog_names)))
 
-    # Combine raw mean and max dataframes
-    raw_combined_max_mean_scores = raw_combined_max_scores.merge(raw_combined_mean_scores,how='inner')
+    # Filter static variable set by (sub-)population
+    global_static_var_set = raw_static_var_set[raw_static_var_set.GUPI.isin(curr_TIL_validation_resamples)].reset_index(drop=True)
+    lores_static_var_set = raw_static_var_set[raw_static_var_set.GUPI.isin(curr_TIL_ICPEH_resamples)].reset_index(drop=True)
+    hires_static_var_set = raw_static_var_set[raw_static_var_set.GUPI.isin(curr_TIL_ICPHR_resamples)].reset_index(drop=True)
 
-    # Formatted deltaTIL scores
-    formatted_delta_TIL_scores = pd.read_csv('../formatted_data/formatted_delta_TIL_scores.csv')
-    formatted_delta_TIL_scores = formatted_delta_TIL_scores[(formatted_delta_TIL_scores.GUPI.isin(curr_TIL_validation_resamples))&(formatted_delta_TIL_scores.TILTimepoint<=7)].reset_index(drop=True)
-    formatted_delta_TIL_scores = formatted_delta_TIL_scores.groupby(['GUPI','TILTimepoint','TILDate','TotalSum','ChangeInTIL'],as_index=False).HVTIL.aggregate({'meanChange':'mean','varChange':'var'})
+    ## Calculate Spearman's rhos
+    # Calculate Spearman's rhos among global static values
+    global_static_spearmans = calculate_spearman_rhos(global_static_var_set,global_static_var_set,'Global static Spearman rhos')
+    global_static_spearmans['Population'] = 'TIL'
 
-    # Demographic and outcome information
-    CENTER_TBI_demo_outcome = pd.read_csv('../formatted_data/formatted_outcome_and_demographics.csv')
-    CENTER_TBI_demo_outcome = CENTER_TBI_demo_outcome[CENTER_TBI_demo_outcome.GUPI.isin(curr_TIL_validation_resamples)].reset_index(drop=True)
+    # Calculate Spearman's rhos among ICP_EH static values
+    lores_static_spearmans = calculate_spearman_rhos(lores_static_var_set,lores_static_var_set,'ICP_EH static Spearman rhos')
+    lores_static_spearmans['Population'] = 'TIL-ICP_EH'
 
-    # Formatted low-resolution values, means, and maxes 
-    formatted_low_resolution_values = pd.read_csv('../formatted_data/formatted_low_resolution_values.csv')
-    formatted_low_resolution_values = formatted_low_resolution_values[(formatted_low_resolution_values.GUPI.isin(curr_TIL_ICPEH_resamples))&(formatted_low_resolution_values.TILTimepoint<=7)].reset_index(drop=True)
-    formatted_low_resolution_maxes_means = pd.read_csv('../formatted_data/formatted_low_resolution_maxes_means.csv')
-    formatted_low_resolution_maxes_means = formatted_low_resolution_maxes_means[formatted_low_resolution_maxes_means.GUPI.isin(curr_TIL_ICPEH_resamples)].reset_index(drop=True)
+    # Calculate Spearman's rhos among ICP_HR static values
+    hires_static_spearmans = calculate_spearman_rhos(hires_static_var_set,hires_static_var_set,'ICP_HR static Spearman rhos')
+    hires_static_spearmans['Population'] = 'TIL-ICP_HR'
 
-    # Formatted high-resolution values, means, and maxes 
-    formatted_high_resolution_values = pd.read_csv('../formatted_data/formatted_high_resolution_values.csv')
-    formatted_high_resolution_values = formatted_high_resolution_values[(formatted_high_resolution_values.GUPI.isin(curr_TIL_ICPHR_resamples))&(formatted_high_resolution_values.TILTimepoint<=7)].reset_index(drop=True)
-    formatted_high_resolution_maxes_means = pd.read_csv('../formatted_data/formatted_high_resolution_maxes_means.csv')
-    formatted_high_resolution_maxes_means = formatted_high_resolution_maxes_means[formatted_high_resolution_maxes_means.GUPI.isin(curr_TIL_ICPHR_resamples)].reset_index(drop=True)
+    # Compile static Spearman's rhos and format
+    compiled_static_spearmans = pd.concat([global_static_spearmans,lores_static_spearmans,hires_static_spearmans],ignore_index=True)
+    compiled_static_spearmans.insert(2,'TILTimepoint','Static')
 
-    # Formatted serum sodium concentration values, means, and maxes
-    raw_formatted_sodium_values = pd.read_csv('../formatted_data/formatted_daily_sodium_values.csv')
-    raw_formatted_sodium_values = raw_formatted_sodium_values[raw_formatted_sodium_values.TILTimepoint<=7].reset_index(drop=True)
-    formatted_sodium_maxes_means = pd.read_csv('../formatted_data/formatted_sodium_maxes_means.csv')
-    formatted_sodium_maxes_means = formatted_sodium_maxes_means[formatted_sodium_maxes_means.GUPI.isin(curr_TIL_validation_resamples)].reset_index(drop=True)
+    # Calculate Spearman's rhos among global dynamic values
+    global_dynamic_spearmans = calculate_dynamic_spearman_rhos(global_dynamic_var_set,global_dynamic_var_set,'Global dynamic Spearman rhos')
+    global_dynamic_spearmans['Population'] = 'TIL'
 
-    ## Calculate TILmean/TILmax correlations
-    # Combine TIL validation set global values
-    TIL_set_global_values = CENTER_TBI_demo_outcome[['GUPI','GCSScoreBaselineDerived','GOSE6monthEndpointDerived','RefractoryICP','MarshallCT','Pr(GOSE>1)','Pr(GOSE>3)','Pr(GOSE>4)','Pr(GOSE>5)','Pr(GOSE>6)','Pr(GOSE>7)']].merge(formatted_sodium_maxes_means,how='left')
+    # Calculate Spearman's rhos among ICP_EH dynamic values
+    lores_dynamic_spearmans = calculate_dynamic_spearman_rhos(lores_dynamic_var_set,lores_dynamic_var_set,'ICP_EH dynamic Spearman rhos')
+    lores_dynamic_spearmans['Population'] = 'TIL-ICP_EH'
 
-    # Calculate Spearman's rho within TILmean/max scores
-    within_TIL_spearmans = calculate_spearman_rhos(raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_validation_resamples)],'Spearman rho within TILmaxes/means')
-    within_TIL_spearmans['Population'] = 'TIL'
+    # Calculate Spearman's rhos among ICP_HR dynamic values
+    hires_dynamic_spearmans = calculate_dynamic_spearman_rhos(hires_dynamic_var_set,hires_dynamic_var_set,'ICP_HR dynamic Spearman rhos')
+    hires_dynamic_spearmans['Population'] = 'TIL-ICP_HR'
 
-    # Calculate Spearman's rho between TILmean/max scores and global values
-    TIL_global_spearmans = calculate_spearman_rhos(raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_validation_resamples)],TIL_set_global_values,'Spearman rho between TILmaxes/means and global values')
-    TIL_global_spearmans['Population'] = 'TIL'
-
-    # Calculate Spearman's rho between TILmean/max scores and lo-res global values
-    TIL_lo_res_spearmans = calculate_spearman_rhos(raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_maxes_means,'Spearman rho between TILmaxes/means and lo-res neuromonitoring')
-    TIL_lo_res_spearmans['Population'] = 'TIL-ICP_EH'
-
-    # Calculate Spearman's rho between TILmean/max scores and hi-res global values
-    TIL_hi_res_spearmans = calculate_spearman_rhos(raw_combined_max_mean_scores[raw_combined_max_mean_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_maxes_means,'Spearman rho between TILmaxes/means and hi-res neuromonitoring')
-    TIL_hi_res_spearmans['Population'] = 'TIL-ICP_HR'
-
-    # Concatenate Spearman's rho dataframes
-    compiled_spearmans_dataframe = pd.concat([within_TIL_spearmans,TIL_global_spearmans,TIL_lo_res_spearmans,TIL_hi_res_spearmans],ignore_index=True)
-    compiled_spearmans_dataframe['resample_idx'] = curr_rs_idx
+    # Concatenate all spearman dataframes into one and format
+    compiled_spearmans = pd.concat([compiled_static_spearmans,global_dynamic_spearmans,lores_dynamic_spearmans,hires_dynamic_spearmans],ignore_index=True)
+    compiled_spearmans['resample_idx'] = curr_rs_idx
 
     # Save concatenated dataframe
-    compiled_spearmans_dataframe.to_pickle(os.path.join(bs_results_dir,'compiled_spearman_rhos_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
+    compiled_spearmans.to_pickle(os.path.join(bs_results_dir,'compiled_spearman_rhos_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
-    ## Calculate TIL correlations
-    # Define vectors of particular columns columns
-    timestamp_columns = ['ICUAdmTimeStamp','ICUDischTimeStamp']
-    physician_impression_columns = ['TILPhysicianConcernsCPP', 'TILPhysicianConcernsICP','TILPhysicianOverallSatisfaction','TILPhysicianOverallSatisfactionSurvival', 'TILPhysicianSatICP']
+    ## Calculate repeated-measures correlations
+    # Calculate rmcorrs among TIL scores
+    TIL_scores_list = ['TotalSum','TIL_Basic','uwTILSum','PILOTSum','TIL_1987Sum']
+    across_TIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],'Across-TIL rmcorrs')
+    across_TIL_rmcorrs['Population'] = 'TIL'
 
-    # Calculate correlations across TIL scores
-    across_TIL_rms = calculate_rmcorr(raw_all_total_scores[raw_all_total_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_all_total_scores[raw_all_total_scores.GUPI.isin(curr_TIL_validation_resamples)],'rmcorr across TIL')
-    across_TIL_rms['Population'] = 'TIL'
-    across_TIL_rms['Scale'] = 'All'
+    # Calculate rmcorrs between TIL scores and physician concerns
+    physician_concerns_list = ['TILPhysicianConcernsCPP','TILPhysicianConcernsICP']
+    TIL_concerns_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'TIL-concerns rmcorrs')
+    TIL_concerns_rmcorrs['Population'] = 'TIL'
 
-    # Define physician impression columns
-    within_TIL_rms = calculate_rmcorr(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns),raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns),'rmcorr within TIL')
-    within_TIL_rms['Scale'] = 'TIL'
-    within_PILOT_rms = calculate_rmcorr(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),'rmcorr within PILOT')
-    within_PILOT_rms['Scale'] = 'PILOT'
-    within_TIL_1987_rms = calculate_rmcorr(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),'rmcorr within TIL_1987')
-    within_TIL_1987_rms['Scale'] = 'TIL_1987'
-    within_uwTIL_rms = calculate_rmcorr(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']),'rmcorr within uwTIL')
-    within_uwTIL_rms['Scale'] = 'uwTIL'   
-    compiled_within_rms = pd.concat([within_TIL_rms,within_PILOT_rms,within_TIL_1987_rms,within_uwTIL_rms],ignore_index=True)
-    compiled_within_rms['Population'] = 'TIL'
+    # Calculate rmcorrs within-TIL scores
+    TIL_components = ['CSFDrainage', 'DecomCraniectomy', 'FluidLoading', 'Hypertonic','ICPSurgery', 'Mannitol', 'Neuromuscular', 'Positioning', 'Sedation','Temperature', 'Vasopressor', 'Ventilation']
+    within_TIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint','TotalSum']+TIL_components],global_dynamic_var_set[['GUPI','TILTimepoint','TotalSum']+TIL_components],'Within-TIL rmcorrs')
+    within_TIL_rmcorrs['Population'] = 'TIL'
+
+    # Calculate rmcorrs within-uwTIL scores
+    uwTIL_components = ['uw'+comp for comp in TIL_components]
+    within_uwTIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],global_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],'Within-uwTIL rmcorrs')
+    within_uwTIL_rmcorrs['Population'] = 'TIL'
+
+    # Calculate component correlations with physician concerns
+    concern_component_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_components],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'Component-Concern rmcorrs')
+    concern_component_rmcorrs['Population'] = 'TIL'
+
+    # Calculate unweighted component correlations with physician concerns
+    concern_uwcomponent_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+uwTIL_components],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'uwComponent-Concern rmcorrs')
+    concern_uwcomponent_rmcorrs['Population'] = 'TIL'
 
     # Calculate correlation between TIL scores and low-resolution neuromonitoring
-    TIL_lo_res_rms = calculate_rmcorr(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between TIL and ICP_EH')
-    TIL_lo_res_rms['Scale'] = 'TIL'
-    PILOT_lo_res_rms = calculate_rmcorr(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between PILOT and ICP_EH')
-    PILOT_lo_res_rms['Scale'] = 'PILOT'
-    TIL_1987_lo_res_rms = calculate_rmcorr(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between TIL_1987 and ICP_EH')
-    TIL_1987_lo_res_rms['Scale'] = 'TIL_1987'
-    uwTIL_lo_res_rms = calculate_rmcorr(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between uwTIL and ICP_EH')
-    uwTIL_lo_res_rms['Scale'] = 'uwTIL'
-    TIL_Basic_lo_res_rms = calculate_rmcorr(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPEH_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr betweenTIL_Basic and ICP_EH')
-    TIL_Basic_lo_res_rms['Scale'] = 'TIL_Basic'
-    compiled_lo_res_rms = pd.concat([TIL_lo_res_rms,PILOT_lo_res_rms,TIL_1987_lo_res_rms,uwTIL_lo_res_rms,TIL_Basic_lo_res_rms],ignore_index=True)
-    compiled_lo_res_rms['Population'] = 'TIL-ICP_EH'
+    lores_rmcorrs = calculate_rmcorr(lores_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list+TIL_components+uwTIL_components],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],'Low-resolution rmcorrs')
+    lores_rmcorrs['Population'] = 'TIL-ICP_EH'
 
     # Calculate correlation between TIL scores and high-resolution neuromonitoring
-    TIL_hi_res_rms = calculate_rmcorr(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between TIL and ICP_HR')
-    TIL_hi_res_rms['Scale'] = 'TIL'
-    PILOT_hi_res_rms = calculate_rmcorr(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between PILOT and ICP_HR')
-    PILOT_hi_res_rms['Scale'] = 'PILOT'
-    TIL_1987_hi_res_rms = calculate_rmcorr(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between TIL_1987 and ICP_HR')
-    TIL_1987_hi_res_rms['Scale'] = 'TIL_1987'
-    uwTIL_hi_res_rms = calculate_rmcorr(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between uwTIL and ICP_HR')
-    uwTIL_hi_res_rms['Scale'] = 'uwTIL'
-    TIL_Basic_hi_res_rms = calculate_rmcorr(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPHR_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between TIL_Basic and ICP_HR')
-    TIL_Basic_hi_res_rms['Scale'] = 'TIL_Basic'
-    compiled_hi_res_rms = pd.concat([TIL_hi_res_rms,PILOT_hi_res_rms,TIL_1987_hi_res_rms,uwTIL_hi_res_rms,TIL_Basic_hi_res_rms],ignore_index=True)
-    compiled_hi_res_rms['Population'] = 'TIL-ICP_HR'
-    
-    # Calculate correlation between TIL scores and serum sodium values
-    TIL_Na_rms = calculate_rmcorr(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between TIL and Na+')
-    TIL_Na_rms['Scale'] = 'TIL'
-    PILOT_Na_rms = calculate_rmcorr(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between PILOT and Na+')
-    PILOT_Na_rms['Scale'] = 'PILOT'
-    TIL_1987_Na_rms = calculate_rmcorr(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between TIL_1987 and Na+')
-    TIL_1987_Na_rms['Scale'] = 'TIL_1987'
-    uwTIL_Na_rms = calculate_rmcorr(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between uwTIL and Na+')
-    uwTIL_Na_rms['Scale'] = 'uwTIL'
-    TIL_Basic_Na_rms = calculate_rmcorr(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_validation_resamples)].drop(columns=timestamp_columns+['TotalSum']+physician_impression_columns),raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'rmcorr between TIL_Basic and Na+')
-    TIL_Basic_Na_rms['Scale'] = 'TIL_Basic'
-    compiled_Na_rms = pd.concat([TIL_Na_rms,PILOT_Na_rms,TIL_1987_Na_rms,uwTIL_Na_rms,TIL_Basic_Na_rms],ignore_index=True)
-    compiled_Na_rms['Population'] = 'TIL'
+    hires_rmcorrs = calculate_rmcorr(hires_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list+TIL_components+uwTIL_components],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],'High-resolution rmcorrs')
+    hires_rmcorrs['Population'] = 'TIL-ICP_HR'
 
-    # Calculate correlation between ICP/CPP and serum sodium values
-    Na_lo_res_rms = calculate_rmcorr(raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_ICPEH_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'rmcorr between Na+ and ICP_EH')
-    Na_lo_res_rms['Population'] = 'TIL-ICP_EH'
-    Na_hi_res_rms = calculate_rmcorr(raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_ICPHR_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'rmcorr between Na+ and ICP_HR')
-    Na_hi_res_rms['Population'] = 'TIL-ICP_HR'
-    compiled_Na_res_rms = pd.concat([Na_lo_res_rms,Na_hi_res_rms],ignore_index=True)
-    compiled_Na_res_rms['Scale'] = 'All'
-
-    # Calculate correlation between TIL and deltaTIL
-    deltaTIL_rms = calculate_rmcorr(formatted_delta_TIL_scores,formatted_delta_TIL_scores,'rmcorr between TIL and deltaTIL')
-    deltaTIL_rms['Scale'] = 'TIL'
-    deltaTIL_rms['Population'] = 'TIL'
-
-    ## Concatenate all the repeated-measures correlation results and save
-    # Concatenate
-    compiled_rms_df = pd.concat([across_TIL_rms,compiled_within_rms,compiled_lo_res_rms,compiled_hi_res_rms,compiled_Na_rms,compiled_Na_res_rms,deltaTIL_rms],ignore_index=True)
-    compiled_rms_df['resample_idx'] = curr_rs_idx
+    # Concatenate all repeated-measures correlation dataframes
+    compiled_rmcorrs = pd.concat([across_TIL_rmcorrs,TIL_concerns_rmcorrs,within_TIL_rmcorrs,within_uwTIL_rmcorrs,concern_component_rmcorrs,concern_uwcomponent_rmcorrs,lores_rmcorrs,hires_rmcorrs],ignore_index=True)
+    compiled_rmcorrs['resample_idx'] = curr_rs_idx
 
     # Save concatenated dataframe
-    compiled_rms_df.to_pickle(os.path.join(bs_results_dir,'compiled_rmcorr_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
+    compiled_rmcorrs.to_pickle(os.path.join(bs_results_dir,'compiled_rmcorr_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
-    ## Mixed-effects regression
-    # Define component columns for each scale
-    TIL_components = ['CSFDrainage', 'DecomCraniectomy','FluidLoading', 'Hypertonic', 'ICPSurgery', 'Mannitol', 'Neuromuscular','Positioning', 'Sedation', 'Temperature','Vasopressor','Ventilation']
-    PILOT_components = ['Temperature', 'Sedation', 'Neuromuscular', 'Ventilation', 'Mannitol','Hypertonic', 'CSFDrainage', 'ICPSurgery', 'DecomCraniectomy','Vasopressor']
-    TIL_1987_components = ['Sedation', 'Mannitol', 'Ventricular', 'Hyperventilation', 'Paralysis']
+    ## Calculate mixed-effects regression coefficients
+    # Regression model of ICP_EH on TIL scale sums
+    TIL_lores_mlm = calc_melm(lores_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],TIL_scores_list,False,uwTIL_components,'Calculating ICP_EH ~ TotalSumScores')
 
-    # Calculate low-resolution mixed effect models
-    TIL_lo_res_mlm = calc_melm(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TotalSum',False,TIL_components,'Calculating ICP_EH ~ TIL')
-    TIL_lo_res_mlm['Scale'] = 'TIL'
-    PILOT_lo_res_mlm = calc_melm(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'PILOTSum',False,PILOT_components,'Calculating ICP_EH ~ PILOT')
-    PILOT_lo_res_mlm['Scale'] = 'PILOT'
-    TIL_1987_lo_res_mlm = calc_melm(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TIL_1987Sum',False,TIL_1987_components,'Calculating ICP_EH ~ TIL_1987')
-    TIL_1987_lo_res_mlm['Scale'] = 'TIL_1987'
-    TIL_Basic_lo_res_mlm = calc_melm(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'TIL_Basic',False,[],'Calculating ICP_EH ~ TIL_Basic')
-    TIL_Basic_lo_res_mlm['Scale'] = 'TIL_Basic'
-    uwTIL_lo_res_mlm = calc_melm(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPEH_resamples)],formatted_low_resolution_values.drop(columns=['TotalSum','nCPP','nICP']),'uwTILSum',True,TIL_components,'Calculating ICP_EH ~ uwTIL')
-    uwTIL_lo_res_mlm['Scale'] = 'uwTIL'
-    compiled_lo_res_mlm = pd.concat([TIL_lo_res_mlm,PILOT_lo_res_mlm,TIL_1987_lo_res_mlm,TIL_Basic_lo_res_mlm,uwTIL_lo_res_mlm],ignore_index=True)
-    compiled_lo_res_mlm['Population'] = 'TIL-ICP_EH'
-                 
-    # Calculate high-resolution mixed effect models
-    TIL_hi_res_mlm = calc_melm(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'TotalSum',False,TIL_components,'Calculating ICP_HR ~ TIL')
-    TIL_hi_res_mlm['Scale'] = 'TIL'
-    PILOT_hi_res_mlm = calc_melm(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'PILOTSum',False,PILOT_components,'Calculating ICP_HR ~ PILOT')
-    PILOT_hi_res_mlm['Scale'] = 'PILOT'
-    TIL_1987_hi_res_mlm = calc_melm(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'TIL_1987Sum',False,TIL_1987_components,'Calculating ICP_HR ~ TIL_1987')
-    TIL_1987_hi_res_mlm['Scale'] = 'TIL_1987'
-    TIL_Basic_hi_res_mlm = calc_melm(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'TIL_Basic',False,[],'Calculating ICP_HR ~ TIL_Basic')
-    TIL_Basic_hi_res_mlm['Scale'] = 'TIL_Basic'
-    uwTIL_hi_res_mlm = calc_melm(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_ICPHR_resamples)],formatted_high_resolution_values.drop(columns=['TotalSum','nCPP','nICP','EVD']),'uwTILSum',True,TIL_components,'Calculating ICP_HR ~ uwTIL')
-    uwTIL_hi_res_mlm['Scale'] = 'uwTIL'
-    compiled_hi_res_mlm = pd.concat([TIL_hi_res_mlm,PILOT_hi_res_mlm,TIL_1987_hi_res_mlm,TIL_Basic_hi_res_mlm,uwTIL_hi_res_mlm],ignore_index=True)
-    compiled_hi_res_mlm['Population'] = 'TIL-ICP_HR'
+    # Regression model of ICP_HR on TIL scale sums
+    TIL_hires_mlm = calc_melm(hires_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],TIL_scores_list,False,uwTIL_components,'Calculating ICP_HR ~ TotalSumScores')
 
-    # Calculate sodium mixed effect models
-    TIL_Na_mlm = calc_melm(raw_formatted_TIL_scores[raw_formatted_TIL_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'TotalSum',False,TIL_components,'Calculating Na+ ~ TIL')
-    TIL_Na_mlm['Scale'] = 'TIL'
-    PILOT_Na_mlm = calc_melm(raw_formatted_PILOT_scores[raw_formatted_PILOT_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'PILOTSum',False,PILOT_components,'Calculating Na+ ~ PILOT')
-    PILOT_Na_mlm['Scale'] = 'PILOT'
-    TIL_1987_Na_mlm = calc_melm(raw_formatted_TIL_1987_scores[raw_formatted_TIL_1987_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'TIL_1987Sum',False,TIL_1987_components,'Calculating Na+ ~ TIL_1987')
-    TIL_1987_Na_mlm['Scale'] = 'TIL_1987'
-    TIL_Basic_Na_mlm = calc_melm(raw_formatted_TIL_Basic_scores[raw_formatted_TIL_Basic_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'TIL_Basic',False,[],'Calculating Na+ ~ TIL_Basic')
-    TIL_Basic_Na_mlm['Scale'] = 'TIL_Basic'
-    uwTIL_Na_mlm = calc_melm(raw_formatted_uwTIL_scores[raw_formatted_uwTIL_scores.GUPI.isin(curr_TIL_validation_resamples)],raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_validation_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']],'uwTILSum',True,TIL_components,'Calculating Na+ ~ uwTIL')
-    uwTIL_Na_mlm['Scale'] = 'uwTIL'
-    compiled_Na_mlm = pd.concat([TIL_Na_mlm,PILOT_Na_mlm,TIL_1987_Na_mlm,TIL_Basic_Na_mlm,uwTIL_Na_mlm],ignore_index=True)
-    compiled_Na_mlm['Population'] = 'TIL'
+    # Regression model of ICP_EH on TIL scale components
+    component_lores_mlm = calc_melm(lores_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],['uwTILSum'],True,uwTIL_components,'Calculating ICP_EH ~ TILComponents')
 
-    # Calculate bespoke TIL ~ Na + ICP mixed effect models
-    TIL_lo_res_Na_df = raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_ICPEH_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']].merge(formatted_low_resolution_values.drop(columns=['nCPP','nICP','CPPmean']))
-    TIL_lo_res_Na_mlm = calc_ICP_Na_melm(TIL_lo_res_Na_df,'TotalSum')
-    TIL_lo_res_Na_mlm['Scale'] = 'TIL'
-    TIL_lo_res_Na_mlm['Population'] = 'TIL-ICP_EH'
-    TIL_hi_res_Na_df = raw_formatted_sodium_values[raw_formatted_sodium_values.GUPI.isin(curr_TIL_ICPHR_resamples)][['GUPI','TILTimepoint','TILDate','meanSodium']].merge(formatted_high_resolution_values.drop(columns=['nCPP','nICP','CPPmean','EVD']))
-    TIL_hi_res_Na_mlm = calc_ICP_Na_melm(TIL_hi_res_Na_df,'TotalSum')
-    TIL_hi_res_Na_mlm['Scale'] = 'TIL'
-    TIL_hi_res_Na_mlm['Population'] = 'TIL-ICP_HR'
-    TIL_ICP_Na_mlm = pd.concat([TIL_lo_res_Na_mlm,TIL_hi_res_Na_mlm],ignore_index=True)
-
+    # Regression model of ICP_HR on TIL scale components
+    component_hires_mlm = calc_melm(hires_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],['uwTILSum'],True,uwTIL_components,'Calculating ICP_HR ~ TILComponents')
+    
     # Concatenate all mlm model information
-    compiled_mlm_df = pd.concat([compiled_lo_res_mlm,compiled_hi_res_mlm,compiled_Na_mlm,TIL_ICP_Na_mlm],ignore_index=True)
+    compiled_mlm_df = pd.concat([TIL_lores_mlm,TIL_hires_mlm,component_lores_mlm,component_hires_mlm],ignore_index=True)
     compiled_mlm_df['resample_idx'] = curr_rs_idx
 
     # Save concatenated dataframe
     compiled_mlm_df.to_pickle(os.path.join(bs_results_dir,'compiled_mixed_effects_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
+
+    ## Calculate ROC curves for refractory intracranial hypertension detection
+    # Designate TIL score maximum columns
+    TIL_max_list = ['TILmax','TIL_Basicmax','uwTILmax','PILOTmax','TIL_1987max']
+
+    # Calculate ROC curves associated with refractory intracranial hypertension detection
+    compiled_ROC_df = calc_ROC(global_static_var_set,TIL_max_list,['RefractoryICP'],'ROC curves for refractory intracranial pressure detection').rename(columns={'Predictor':'Scale'})
+    
+    # Calculate AUC associated with each ROC and merge
+    refract_ICP_AUCs = global_static_var_set[['GUPI','RefractoryICP']+TIL_max_list].melt(id_vars=['GUPI','RefractoryICP'],value_vars=TIL_max_list).groupby(['variable'],as_index=False).apply(lambda dfx: roc_auc_score(dfx.RefractoryICP,dfx['value'])).rename(columns={None:'AUC','variable':'Scale'})
+    compiled_ROC_df = compiled_ROC_df.merge(refract_ICP_AUCs,how='left')
+    
+    # Add resampling index to ROC dataframe
+    compiled_ROC_df['resample_idx'] = curr_rs_idx
+
+    # Save concatenated dataframe
+    compiled_ROC_df.to_pickle(os.path.join(bs_results_dir,'compiled_ROCs_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
+
+    ## Calculate mutual entropy between TIL and TIL_Basic
+    # Calculate mutual entropy between TILmax scores and TIL_Basicmax
+    max_mi = pd.DataFrame([_estimate_mi(global_static_var_set[TIL_max_list].values,global_static_var_set['TIL_Basicmax'].values,True,True)],columns=[nm.replace('max','') for nm in TIL_max_list])
+    max_mi.insert(0,'TILTimepoint','Max')
+    max_mi.insert(1,'METRIC','MutualInfo')
+    max_entropy = pd.DataFrame([global_static_var_set[TIL_max_list].apply(lambda x: stats.entropy(x.value_counts().values/x.count())).values],columns=[nm.replace('max','') for nm in TIL_max_list])
+    max_entropy.insert(0,'TILTimepoint','Max')
+    max_entropy.insert(1,'METRIC','Entropy')
+
+    # Calculate mutual information and entropy for daily TIL scores
+    s = global_dynamic_var_set.groupby('TILTimepoint',as_index=True).apply(lambda dfx: _estimate_mi(dfx[TIL_scores_list].values,dfx['TIL_Basic'].values,True,True)) 
+    daily_mi = pd.DataFrame.from_dict(dict(zip(s.index, s.values)),orient='index',columns=TIL_scores_list).rename(columns={'TotalSum':'TIL','uwTILSum':'uwTIL','PILOTSum':'PILOT','TIL_1987Sum':'TIL_1987'})
+    daily_mi.insert(0,'TILTimepoint',daily_mi.index.values)
+    daily_mi.insert(1,'METRIC','MutualInfo')
+    daily_entropy = global_dynamic_var_set.groupby('TILTimepoint',as_index=False).apply(lambda dfx: dfx[TIL_scores_list].apply(lambda x: stats.entropy(x.value_counts().values/x.count()))).rename(columns={'TotalSum':'TIL','uwTILSum':'uwTIL','PILOTSum':'PILOT','TIL_1987Sum':'TIL_1987'})
+    daily_entropy.insert(1,'METRIC','Entropy')
+
+    # Concatenate current daily/max mutual information and entropy to running list
+    compiled_MI_entropy_df = pd.concat([daily_mi,daily_entropy,max_mi,max_entropy],ignore_index=True)
+
+    # Add resampling index to mutual information dataframe
+    compiled_MI_entropy_df['resample_idx'] = curr_rs_idx
+
+    # Save concatenated dataframe
+    compiled_MI_entropy_df.to_pickle(os.path.join(bs_results_dir,'compiled_mutual_info_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
 if __name__ == '__main__':
     

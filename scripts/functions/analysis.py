@@ -276,6 +276,43 @@ def calculate_spearman_rhos(x,y,message):
     # Return correlation datframe
     return(corr_df)
 
+# Function to calculate Spearman's Rhos between 2 dynamic dataframes
+def calculate_dynamic_spearman_rhos(x,y,message):
+    
+    # Initialise lists to store correlation values and metadata for each pair
+    sr_df_list = []
+
+    # Find all unique pairs of columns for which to calculate correlation
+    pairs = list(set(tuple(sorted(pair)) for pair in itertools.product(x.drop(['GUPI','TILTimepoint'], axis=1).columns.tolist(), y.drop(['GUPI','TILTimepoint'], axis=1).columns.tolist()) if pair[0] != pair[1]))
+
+    # Iterate through column pairs:
+    for curr_pair in tqdm(pairs,message):
+        
+        # Create a dataframe of non-missing rows common to both columns
+        try:
+            curr_pair_df = x[['GUPI','TILTimepoint',curr_pair[0]]].merge(y[['GUPI','TILTimepoint',curr_pair[1]]],how='inner').dropna().reset_index(drop=True)
+        except:
+            curr_pair_df = y[['GUPI','TILTimepoint',curr_pair[0]]].merge(x[['GUPI','TILTimepoint',curr_pair[1]]],how='inner').dropna().reset_index(drop=True)
+
+        # Calculate Spearman's correlation stratified by TILTimepoint
+        curr_sr_df = curr_pair_df.groupby('TILTimepoint',as_index=False).apply(lambda x: stats.spearmanr(x[curr_pair[0]],x[curr_pair[1]]).statistic).rename(columns={None:'rho'})
+        curr_pval_df = curr_pair_df.groupby('TILTimepoint',as_index=False).apply(lambda x: stats.spearmanr(x[curr_pair[0]],x[curr_pair[1]]).pvalue).rename(columns={None:'pval'})
+        curr_res_df = curr_sr_df.merge(curr_pval_df,how='left')
+
+        # Add meta-data of current calculation
+        curr_res_df.insert(0,'first',curr_pair[0])
+        curr_res_df.insert(1,'second',curr_pair[1])
+        curr_res_df['count'] = curr_pair_df.shape[0]
+
+        # Append dataframe to running list
+        sr_df_list.append(curr_res_df)
+
+    # Concatenate list of Spearman rhos dataframe
+    corr_df = pd.concat(sr_df_list,ignore_index=True)
+
+    # Return correlation datframe
+    return(corr_df)
+
 # Function to calculate repeated-measures correlation
 def calculate_rmcorr(x,y,message):
 
@@ -283,16 +320,16 @@ def calculate_rmcorr(x,y,message):
     col_1, col_2, rs, pvals, patients, counts = [], [], [], [], [], []
 
     # Find all unique pairs of columns for which to calculate correlation
-    pairs = list(set(tuple(sorted(pair)) for pair in itertools.product(x.drop(['GUPI','TILTimepoint','TILDate'], axis=1).columns.tolist(), y.drop(['GUPI','TILTimepoint','TILDate'], axis=1).columns.tolist()) if pair[0] != pair[1]))
+    pairs = list(set(tuple(sorted(pair)) for pair in itertools.product(x.drop(['GUPI','TILTimepoint'], axis=1).columns.tolist(), y.drop(['GUPI','TILTimepoint'], axis=1).columns.tolist()) if pair[0] != pair[1]))
 
     # Iterate through column pairs:
     for curr_pair in tqdm(pairs,message):
         
         # Create a dataframe of non-missing rows common to both columns
         try:
-            curr_pair_df = x[['GUPI','TILTimepoint','TILDate',curr_pair[0]]].merge(y[['GUPI','TILTimepoint','TILDate',curr_pair[1]]],how='inner').dropna().reset_index(drop=True)
+            curr_pair_df = x[['GUPI','TILTimepoint',curr_pair[0]]].merge(y[['GUPI','TILTimepoint',curr_pair[1]]],how='inner').dropna().reset_index(drop=True)
         except:
-            curr_pair_df = y[['GUPI','TILTimepoint','TILDate',curr_pair[0]]].merge(x[['GUPI','TILTimepoint','TILDate',curr_pair[1]]],how='inner').dropna().reset_index(drop=True)
+            curr_pair_df = y[['GUPI','TILTimepoint',curr_pair[0]]].merge(x[['GUPI','TILTimepoint',curr_pair[1]]],how='inner').dropna().reset_index(drop=True)
         
         try:
             # Calculate repeated-measures correlation
@@ -316,64 +353,71 @@ def calculate_rmcorr(x,y,message):
     return(corr_df)
 
 # Function to calculate mixed effect linear models regressed on TIL score and components
-def calc_melm(x,y,total_name,component_tf,component_list,message):
+def calc_melm(x,y,total_names,component_tf,component_list,message):
     # Initialise lists to store running information dataframes
     mlm_outputs = []
 
     # Extract potential target names from second dataframe
-    target_names = y.drop(columns=['GUPI','TILTimepoint','TILDate']).columns
+    target_names = y.drop(columns=['GUPI','TILTimepoint']).columns
 
-    # Iterate through target names
-    for curr_target in tqdm(target_names,message):
-        # Define MELM regression formaulae
-        total_sum_formula = curr_target+' ~ '+total_name
+    # Iterate through total score names
+    for curr_total in tqdm(total_names,message):
 
-        # Create dataframe of non-missing rows common to both dataframes
-        curr_common_df = x[['GUPI','TILTimepoint','TILDate']+component_list+[total_name]].merge(y[['GUPI','TILTimepoint','TILDate']+[curr_target]],how='inner').dropna(subset=[total_name,curr_target])
+        # Iterate through target names
+        for curr_target in tqdm(target_names):
+            # Define MELM regression formaulae
+            total_sum_formula = curr_target+' ~ '+curr_total + ' + TILTimepoint'
 
-        # Regression on summed score
-        total_score_mlm = smf.mixedlm(total_sum_formula, curr_common_df, groups=curr_common_df["GUPI"]).fit()
-        
-        # Create dataframe to store relevant information
-        curr_total_df = pd.DataFrame({'Type':'TotalScore',
-                                        'Formula':total_sum_formula,
-                                        'Name':total_score_mlm.params.index.tolist(),
-                                        'Coefficient':total_score_mlm.params.tolist(),
-                                        'pvalues':total_score_mlm.pvalues.tolist(),
-                                        'ResidVar':total_score_mlm.scale,
-                                        'RandomEffectVar':float(total_score_mlm.cov_re.iloc[0]),
-                                        'PredictedValueVar':total_score_mlm.predict(curr_common_df).var(),
-                                        'FittedValueVar':total_score_mlm.fittedvalues.var(),
-                                        'LogLikelihood':total_score_mlm.llf,
-                                        'count':curr_common_df.shape[0],
-                                        'patient_count':curr_common_df.GUPI.nunique()})
-        
-        # Append currently constructed dataframe to running list
-        mlm_outputs.append(curr_total_df)
+            # # Create dataframe of non-missing rows common to both dataframes
+            # curr_common_df = x[['GUPI','TILTimepoint']+component_list+[curr_total]].merge(y[['GUPI','TILTimepoint']+[curr_target]],how='inner').dropna(subset=[curr_total,curr_target])
+            curr_common_df = x[['GUPI','TILTimepoint']+[curr_total]].merge(y[['GUPI','TILTimepoint']+[curr_target]],how='inner').dropna(subset=[curr_total,curr_target])
 
-        if component_tf:
-            # Define component formula
-            component_formula = curr_target+' ~ '+' + '.join(['C('+var+',Treatment)' for var in component_list])
-
-            # Regression on components
-            component_score_mlm = smf.mixedlm(component_formula, curr_common_df, groups=curr_common_df["GUPI"]).fit()
-
+            # Regression on summed score
+            total_score_mlm = smf.mixedlm(total_sum_formula, curr_common_df, groups=curr_common_df["GUPI"]).fit()
+            
             # Create dataframe to store relevant information
-            curr_component_df = pd.DataFrame({'Type':'Component',
-                                                'Formula':component_formula,
-                                                'Name':component_score_mlm.params.index.tolist(),
-                                                'Coefficient':component_score_mlm.params.tolist(),
-                                                'pvalues':component_score_mlm.pvalues.tolist(),
-                                                'ResidVar':component_score_mlm.scale,
-                                                'RandomEffectVar':float(component_score_mlm.cov_re.iloc[0]),
-                                                'PredictedValueVar':component_score_mlm.predict(curr_common_df).var(),
-                                                'FittedValueVar':component_score_mlm.fittedvalues.var(),
-                                                'LogLikelihood':component_score_mlm.llf,
-                                                'count':curr_common_df.shape[0],
-                                                'patient_count':curr_common_df.GUPI.nunique()})
+            curr_total_df = pd.DataFrame({'Type':'TotalScore',
+                                            'Formula':total_sum_formula,
+                                            'Name':total_score_mlm.params.index.tolist(),
+                                            'Coefficient':total_score_mlm.params.tolist(),
+                                            'pvalues':total_score_mlm.pvalues.tolist(),
+                                            'ResidVar':total_score_mlm.scale,
+                                            'RandomEffectVar':float(total_score_mlm.cov_re.iloc[0]),
+                                            'PredictedValueVar':total_score_mlm.predict(curr_common_df).var(),
+                                            'FittedValueVar':total_score_mlm.fittedvalues.var(),
+                                            'LogLikelihood':total_score_mlm.llf,
+                                            'count':curr_common_df.shape[0],
+                                            'patient_count':curr_common_df.GUPI.nunique()})
             
             # Append currently constructed dataframe to running list
-            mlm_outputs.append(curr_component_df)
+            mlm_outputs.append(curr_total_df)
+
+            if component_tf:
+                # Define component dataframe
+                curr_component_df = x[['GUPI','TILTimepoint']+component_list].merge(y[['GUPI','TILTimepoint']+[curr_target]],how='inner').dropna(subset=component_list+[curr_target])
+
+                # Define component formula
+                component_formula = curr_target+' ~ '+' + '.join(['C('+var+',Treatment)' for var in component_list])+' + TILTimepoint'
+
+                # Regression on components
+                component_score_mlm = smf.mixedlm(component_formula, curr_component_df, groups=curr_component_df["GUPI"]).fit()
+
+                # Create dataframe to store relevant information
+                curr_component_df = pd.DataFrame({'Type':'Component',
+                                                    'Formula':component_formula,
+                                                    'Name':component_score_mlm.params.index.tolist(),
+                                                    'Coefficient':component_score_mlm.params.tolist(),
+                                                    'pvalues':component_score_mlm.pvalues.tolist(),
+                                                    'ResidVar':component_score_mlm.scale,
+                                                    'RandomEffectVar':float(component_score_mlm.cov_re.iloc[0]),
+                                                    'PredictedValueVar':component_score_mlm.predict(curr_component_df).var(),
+                                                    'FittedValueVar':component_score_mlm.fittedvalues.var(),
+                                                    'LogLikelihood':component_score_mlm.llf,
+                                                    'count':curr_component_df.shape[0],
+                                                    'patient_count':curr_component_df.GUPI.nunique()})
+                
+                # Append currently constructed dataframe to running list
+                mlm_outputs.append(curr_component_df)
         
     # Concatenate list of mlm outputs and return
     return(pd.concat(mlm_outputs,ignore_index=True))
@@ -670,3 +714,30 @@ def long_missingness_analysis(char_set,data_set,timepoints,chosen_cols):
 
     # Return results
     return(num_summary_stats,cat_summary_stats)
+
+# Function to calculate ROC information
+def calc_ROC(x,pred_names,target_names,message):
+
+    # Create empty list to store ROC results
+    roc_list = []
+
+    # Iterate through predictor names
+    for curr_pred in tqdm(pred_names,message):
+    
+        # Iterate through target variable names
+        for curr_target in target_names:
+            
+            # Calculate current ROC values
+            curr_fpr, curr_tpr, curr_thresholds = roc_curve(x[curr_target],x[curr_pred])
+
+            # Compile current ROC information into dataframe
+            curr_curve_df = pd.DataFrame({'Predictor':curr_pred,'FPR':curr_fpr,'TPR':curr_tpr,'Threshold':curr_thresholds})
+
+            # Append current information dataframe to running list
+            roc_list.append(curr_curve_df)
+
+    # Concatenate list of dataframes into single dataframe
+    compiled_roc_df = pd.concat(roc_list,ignore_index=True)
+
+    # Return dataframe
+    return(compiled_roc_df)
