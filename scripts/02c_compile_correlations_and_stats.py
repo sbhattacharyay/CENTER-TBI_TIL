@@ -106,29 +106,41 @@ compiled_spearman_rhos.to_csv(os.path.join(results_dir,'bootstrapping_results','
 compiled_ROCs.to_csv(os.path.join(results_dir,'bootstrapping_results','compiled_ROCs_results.csv'),index=False)
 compiled_mutual_info.to_csv(os.path.join(results_dir,'bootstrapping_results','compiled_mutual_info_results.csv'),index=False)
 
-# ### III. Calculate 95% confidence intervals
-# ## Load compiled statistics
-# # Load mixed effects values
-# compiled_mixed_effects = pd.read_csv('../bootstrapping_results/compiled_mixed_effects_results.csv')
+### III. Calculate 95% confidence intervals
+## Load compiled statistics
+# Load mixed effects values
+compiled_mixed_effects = pd.read_csv(os.path.join(results_dir,'bootstrapping_results','compiled_mixed_effects_results.csv'))
 
-# # Load repeated-measures correlation values
-# compiled_rmcorr = pd.read_csv('../bootstrapping_results/compiled_rmcorr_results.csv')
+# Load repeated-measures correlation values
+compiled_rmcorr = pd.read_csv(os.path.join(results_dir,'bootstrapping_results','compiled_rmcorr_results.csv'))
 
-# # Load Spearman's rho values
-# compiled_spearman_rhos = pd.read_csv('../bootstrapping_results/compiled_spearman_rhos_results.csv')
+# Load Spearman's rho values
+compiled_spearman_rhos = pd.read_csv(os.path.join(results_dir,'bootstrapping_results','compiled_spearman_rhos_results.csv'))
 
-# ## Calculate and format 95% confidence intervals
-# # Calculate and format 95% confidence intervals
-# CI_spearman_rhos = compiled_spearman_rhos.melt(id_vars=['first','second','Population','count','resample_idx'],var_name='metric').groupby(['Population','first','second','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
-# CI_mixed_effects = compiled_mixed_effects.melt(id_vars=['Type','Formula','Name','Scale','Population','count','patient_count','resample_idx'],var_name='metric').groupby(['Population','Type','Formula','Name','Scale','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
-# CI_rmcorr = compiled_rmcorr.melt(id_vars=['first','second','Population','Scale','count','patient_count','resample_idx'],var_name='metric').groupby(['Population','Scale','first','second','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+# Load ROC values
+compiled_ROCs = pd.read_csv(os.path.join(results_dir,'bootstrapping_results','compiled_ROCs_results.csv'))
 
-# # Add formatting confidence interval 
-# CI_spearman_rhos['FormattedCI'] = CI_spearman_rhos['median'].round(2).astype(str)+' ('+CI_spearman_rhos.lo.round(2).astype(str)+'–'+CI_spearman_rhos.hi.round(2).astype(str)+')'
-# CI_mixed_effects['FormattedCI'] = CI_mixed_effects['median'].round(2).astype(str)+' ('+CI_mixed_effects.lo.round(2).astype(str)+'–'+CI_mixed_effects.hi.round(2).astype(str)+')'
-# CI_rmcorr['FormattedCI'] = CI_rmcorr['median'].round(2).astype(str)+' ('+CI_rmcorr.lo.round(2).astype(str)+'–'+CI_rmcorr.hi.round(2).astype(str)+')'
+# Load mutual information values
+compiled_mutual_info = pd.read_csv(os.path.join(results_dir,'bootstrapping_results','compiled_mutual_info_results.csv'))
 
-# # Save formatted confidence intervals
-# CI_mixed_effects.to_csv('../bootstrapping_results/CI_mixed_effects_results.csv',index=False)
-# CI_spearman_rhos.to_csv('../bootstrapping_results/CI_spearman_rhos_results.csv',index=False)
-# CI_rmcorr.to_csv('../bootstrapping_results/CI_rmcorr_results.csv',index=False)
+## Calculate and format 95% confidence intervals
+# Calculate and format 95% confidence intervals
+CI_spearman_rhos = compiled_spearman_rhos.melt(id_vars=['first','second','Population','TILTimepoint','count','resample_idx'],var_name='metric').groupby(['Population','TILTimepoint','first','second','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+CI_mixed_effects = compiled_mixed_effects.melt(id_vars=['Type','Formula','Name','count','patient_count','resample_idx'],var_name='metric').drop_duplicates(ignore_index=True).groupby(['Type','Formula','Name','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+CI_rmcorr = compiled_rmcorr.melt(id_vars=['first','second','Population','count','patient_count','resample_idx'],var_name='metric').groupby(['Population','first','second','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+CI_ROCs = compiled_ROCs.melt(id_vars=['Scale','Threshold','resample_idx'],var_name='metric').groupby(['Scale','Threshold','metric'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+CI_mutual_info = compiled_mutual_info.melt(id_vars=['TILTimepoint','METRIC','resample_idx'],var_name='Scale').groupby(['Scale','METRIC','TILTimepoint'],as_index=False)['value'].aggregate({'lo':lambda x: np.quantile(x,.025),'median':np.median,'hi':lambda x: np.quantile(x,.975),'mean':np.mean,'std':np.std,'min':np.min,'max':np.max,'resamples':'count'}).reset_index(drop=True)
+
+# Add formatting confidence interval 
+CI_spearman_rhos['FormattedCI'] = CI_spearman_rhos['median'].round(2).astype(str)+' ('+CI_spearman_rhos.lo.round(2).astype(str)+'–'+CI_spearman_rhos.hi.round(2).astype(str)+')'
+CI_mixed_effects['FormattedCI'] = CI_mixed_effects['median'].round(2).astype(str)+' ('+CI_mixed_effects.lo.round(2).astype(str)+'–'+CI_mixed_effects.hi.round(2).astype(str)+')'
+CI_rmcorr['FormattedCI'] = CI_rmcorr['median'].round(2).astype(str)+' ('+CI_rmcorr.lo.round(2).astype(str)+'–'+CI_rmcorr.hi.round(2).astype(str)+')'
+CI_ROCs['FormattedCI'] = CI_ROCs['median'].round(2).astype(str)+' ('+CI_ROCs.lo.round(2).astype(str)+'–'+CI_ROCs.hi.round(2).astype(str)+')'
+CI_mutual_info['FormattedCI'] = CI_mutual_info['median'].round(2).astype(str)+' ('+CI_mutual_info.lo.round(2).astype(str)+'–'+CI_mutual_info.hi.round(2).astype(str)+')'
+
+# Save formatted confidence intervals
+CI_mixed_effects.to_csv(os.path.join(results_dir,'bootstrapping_results','CI_mixed_effects_results.csv'),index=False)
+CI_spearman_rhos.to_csv(os.path.join(results_dir,'bootstrapping_results','CI_spearman_rhos_results.csv'),index=False)
+CI_rmcorr.to_csv(os.path.join(results_dir,'bootstrapping_results','CI_rmcorr_results.csv'),index=False)
+CI_ROCs.to_csv(os.path.join(results_dir,'bootstrapping_results','CI_ROCs_results.csv'),index=False)
+CI_mutual_info.to_csv(os.path.join(results_dir,'bootstrapping_results','CI_mutual_info_results.csv'),index=False)

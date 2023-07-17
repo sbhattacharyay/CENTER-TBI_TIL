@@ -43,11 +43,11 @@ source('functions/plotting.R')
 ## Load and prepare formatted TILsummaries scores dataframe
 # Load formatted TILsummaries scores dataframe and select relevant columns
 formatted.uwTIL.max.mean <- read.csv('../formatted_data/formatted_unweighted_TIL_scores.csv',na.strings = c("NA","NaN","", " ")) %>%
-  mutate(uwTILSum = CSFDrainage+DecomCraniectomy+FluidLoading+Hypertonic+ICPSurgery+Mannitol+Neuromuscular+Positioning+Sedation+Temperature+Vasopressor+Ventilation) %>%
-  filter(TILTimepoint<=7) %>%
+  filter(TILTimepoint<=7,TILTimepoint>=1) %>%
   group_by(GUPI) %>%
   summarise(uwTILmax = max(uwTILSum,na.rm=T),
-            uwTILmean = mean(uwTILSum,na.rm=T))
+            uwTILmean = mean(uwTILSum,na.rm=T),
+            uwTILmedian = median(uwTILSum,na.rm=T))
 
 formatted.TIL.max <- read.csv('../formatted_data/formatted_TIL_max.csv',
                               na.strings = c("NA","NaN","", " ")) %>%
@@ -58,25 +58,25 @@ formatted.TIL.max <- read.csv('../formatted_data/formatted_TIL_max.csv',
   left_join(formatted.uwTIL.max.mean%>%select(GUPI,uwTILmax)) %>%
   pivot_longer(cols=-GUPI,names_to = 'Scale',values_to = 'Score') %>%
   mutate(Scale = str_remove(Scale,'max'),
-         MeanMax='Max over first week in ICU')
+         MedianMax='Max over first week in ICU')
 
-formatted.TIL.mean <- read.csv('../formatted_data/formatted_TIL_mean.csv',
-                               na.strings = c("NA","NaN","", " ")) %>%
-  select(GUPI,TILmean) %>%
-  left_join(read.csv('../formatted_data/formatted_TIL_Basic_mean.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TIL_Basicmean)) %>%
-  left_join(read.csv('../formatted_data/formatted_PILOT_mean.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,PILOTmean)) %>%
-  left_join(read.csv('../formatted_data/formatted_TIL_1987_mean.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TIL_1987mean)) %>%
-  left_join(formatted.uwTIL.max.mean%>%select(GUPI,uwTILmean)) %>%
+formatted.TIL.median <- read.csv('../formatted_data/formatted_TIL_median.csv',
+                                 na.strings = c("NA","NaN","", " ")) %>%
+  select(GUPI,TILmedian) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_Basic_median.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TIL_Basicmedian)) %>%
+  left_join(read.csv('../formatted_data/formatted_PILOT_median.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,PILOTmedian)) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_1987_median.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TIL_1987median)) %>%
+  left_join(formatted.uwTIL.max.mean%>%select(GUPI,uwTILmedian)) %>%
   pivot_longer(cols=-GUPI,names_to = 'Scale',values_to = 'Score') %>%
-  mutate(Scale = str_remove(Scale,'mean'),
-         MeanMax='Mean over first week in ICU')
+  mutate(Scale = str_remove(Scale,'median'),
+         MedianMax='Median over first week in ICU')
 
-formatted.TIL.maxes.means <- rbind(formatted.TIL.max,formatted.TIL.mean) %>%
+formatted.TIL.maxes.medians <- rbind(formatted.TIL.max,formatted.TIL.median) %>%
   mutate(Scale = factor(Scale,levels=c('TIL','uwTIL','TIL_Basic','PILOT','TIL_1987')))
 
-## Create and save TILmeans and TILmaxes violin plots
+## Create and save TILmedians and TILmaxes violin plots
 # Create ggplot object for plot
-TIL.means.maxes.violin.plot <- formatted.TIL.maxes.means %>%
+TIL.medians.maxes.violin.plot <- formatted.TIL.maxes.medians %>%
   ggplot(aes(x = Scale, y = Score)) +
   geom_violin(aes(fill=Scale),scale = "width",trim=TRUE,lwd=1.3/.pt,alpha=.5) +
   geom_quasirandom(varwidth = TRUE,alpha = 0.25,stroke = 0,size=.5) +
@@ -85,7 +85,7 @@ TIL.means.maxes.violin.plot <- formatted.TIL.maxes.means %>%
   scale_y_continuous(breaks = seq(0,31,5),minor_breaks = seq(0,38,1)) +
   scale_fill_manual(values=c('#003f5c','#58508d','#bc5090','#ff6361','#ffa600'))+
   scale_color_manual(values=c('#003f5c','#58508d','#bc5090','#ff6361','#ffa600'))+
-  facet_wrap(~MeanMax,
+  facet_wrap(~MedianMax,
              nrow = 1,
              scales = 'free',
              strip.position = "left") +
@@ -105,7 +105,7 @@ TIL.means.maxes.violin.plot <- formatted.TIL.maxes.means %>%
 
 # Create directory for current date and save plots
 dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
-ggsave(file.path('../plots',Sys.Date(),'til_mean_maxes.svg'),TIL.means.maxes.violin.plot,device= svglite,units='in',dpi=600,width=7.5,height = 2)
+ggsave(file.path('../plots',Sys.Date(),'til_median_maxes.svg'),TIL.medians.maxes.violin.plot,device= svglite,units='in',dpi=600,width=7.5,height = 2)
 
 ## Load formatted TIL scores over first week of ICU stay
 # Load formatted TIL24 scores dataframe and select relevant columns
@@ -114,7 +114,7 @@ formatted.TIL.scores <- read.csv('../formatted_data/formatted_TIL_scores.csv',na
   left_join(read.csv('../formatted_data/formatted_TIL_Basic_scores.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TILTimepoint,TIL_Basic)) %>%
   left_join(read.csv('../formatted_data/formatted_PILOT_scores.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TILTimepoint,PILOTSum)) %>%
   left_join(read.csv('../formatted_data/formatted_TIL_1987_scores.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TILTimepoint,TIL_1987Sum)) %>%
-  left_join(read.csv('../formatted_data/formatted_unweighted_TIL_scores.csv',na.strings = c("NA","NaN","", " "))%>%mutate(uwTILSum = CSFDrainage+DecomCraniectomy+FluidLoading+Hypertonic+ICPSurgery+Mannitol+Neuromuscular+Positioning+Sedation+Temperature+Vasopressor+Ventilation)%>%select(GUPI,TILTimepoint,uwTILSum)) %>%
+  left_join(read.csv('../formatted_data/formatted_unweighted_TIL_scores.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TILTimepoint,uwTILSum)) %>%
   rename(TIL24=TotalSum,
          TILBasic24 = TIL_Basic,
          PILOT24 = PILOTSum,
@@ -161,94 +161,75 @@ ggsave(file.path('../plots',Sys.Date(),'til_24s.png'),TIL.24s.violin.plot,units=
 ### III. Figure 3: Associations of TIL and alternative scales with other clinical measures.
 ## Load and prepare formatted confidence intervals of Spearmans
 # Extract names of scales for Spearman's correlation plot
-TIL_spearman_names <- read.csv('../bootstrapping_results/CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+TIL_spearman_names <- read.csv('../results/bootstrapping_results/CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   select(first,second) %>%
   unique() %>%
   pivot_longer(cols=c(first,second)) %>%
-  filter((grepl('TIL',value))|(grepl('PILOT',value))) %>%
+  filter((grepl('TIL',value))|(grepl('PILOT',value)),
+         (grepl('max',value))|(grepl('median',value))) %>%
   select(value) %>%
   unique() %>%
   .$value
 
 # Load and format Spearman's correlation confidence interval dataframe
-CI.spearman.rhos <- read.csv('../bootstrapping_results/CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  filter(((first %in% TIL_spearman_names)&!(second %in% TIL_spearman_names))|(!(first %in% TIL_spearman_names)&(second %in% TIL_spearman_names))) %>%
+CI.spearman.rhos <- read.csv('../results/bootstrapping_results/CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+  filter(((first %in% TIL_spearman_names)&!(second %in% TIL_spearman_names))|(!(first %in% TIL_spearman_names)&(second %in% TIL_spearman_names)),
+         TILTimepoint=='Static') %>%
   mutate(FirstMax = grepl('max',first),
          SecondMax = grepl('max',second),
          FirstMean = grepl('mean',first),
-         SecondMean = grepl('mean',second)) %>%
-  filter(!(FirstMax&SecondMean),
-         !(FirstMean&SecondMax),
+         SecondMean = grepl('mean',second),
+         FirstMedian = grepl('median',first),
+         SecondMedian = grepl('median',second)) %>%
+  filter(!(FirstMax&SecondMedian),
+         !(FirstMedian&SecondMax),
          metric == 'rho') %>%
-  mutate(MaxOrMean = case_when(FirstMax|SecondMax~'Max',
-                               FirstMean|SecondMean~'Mean')) %>%
-  mutate(TILScore = case_when(first %in% TIL_spearman_names ~ first,
+  mutate(MaxOrMedian = case_when(FirstMax|SecondMax~'Max',
+                                 FirstMedian|SecondMedian~'Median'),
+         TILScore = case_when(first %in% TIL_spearman_names ~ first,
                               second %in% TIL_spearman_names ~ second),
          OtherScore = case_when(!(first %in% TIL_spearman_names) ~ first,
                                 !(second %in% TIL_spearman_names) ~ second)) %>%
-  filter(!(OtherScore %in% c('MarshallCT','RefractoryICP'))) %>%
-  mutate(BaseTILScore = case_when(MaxOrMean=='Max'~str_remove(TILScore,'max'),
-                                  MaxOrMean=='Mean'~str_remove(TILScore,'mean')),
-         OtherScore = case_when(Population!='TIL'~paste(sub(".*_","", Population),OtherScore),
-                                TRUE ~ OtherScore)) %>%
-  mutate(OtherScore = case_when(OtherScore == "maxSodium" ~ "Na+max",
-                                OtherScore == "meanSodium" ~ "Na+mean",
-                                OtherScore == "GCSScoreBaselineDerived" ~ "GCS",
+  filter(OtherScore %in% c('GCSScoreBaselineDerived',
+                           'GOSE6monthEndpointDerived',
+                           'Pr(GOSE>1)',
+                           'Pr(GOSE>3)',
+                           'Pr(GOSE>4)',
+                           'Pr(GOSE>5)',
+                           'Pr(GOSE>6)',
+                           'Pr(GOSE>7)',
+                           'ICPmaxEH',
+                           'ICPmaxHR',
+                           'CPPminEH',
+                           'CPPminHR',
+                           'ICPmedianEH',
+                           'ICPmedianHR',
+                           'CPPmedianEH',
+                           'CPPmedianHR'),
+         !is.na(MaxOrMedian),
+         ((Population=='TIL-ICP_EH')&(str_ends(OtherScore,'EH')))|((Population=='TIL-ICP_HR')&(str_ends(OtherScore,'HR')))|((Population=='TIL')&(!str_ends(OtherScore,'HR')&!str_ends(OtherScore,'EH'))),
+         !((OtherScore %in% c('CPPminEH','CPPminHR'))&(MaxOrMedian=='Median'))) %>%
+  mutate(BaseTILScore = case_when(MaxOrMedian=='Max'~str_remove(TILScore,'max'),
+                                  MaxOrMedian=='Median'~str_remove(TILScore,'median')),
+         OtherScore = case_when(OtherScore == "GCSScoreBaselineDerived" ~ "GCS",
                                 OtherScore == "GOSE6monthEndpointDerived" ~ "GOSE",
                                 TRUE ~ OtherScore)) %>%
-  mutate(MaxOrMean = plyr::mapvalues(MaxOrMean,
-                                     from=c('Max','Mean'),
-                                     to=c('Max score correlations','Mean score correlations'))) %>%
-  filter(!str_detect(OtherScore,' ICP'),
-         !str_detect(OtherScore,' CPP'),
-         !str_detect(OtherScore,'Na+'))
-
-# Load and format Spearman's correlation confidence interval dataframe from differential calculation run
-CI.diff.spearman.rhos <- read.csv('../bootstrapping_results/differential_CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  filter(((first %in% TIL_spearman_names)&!(second %in% TIL_spearman_names))|(!(first %in% TIL_spearman_names)&(second %in% TIL_spearman_names))) %>%
-  mutate(FirstMax = grepl('max',first),
-         SecondMax = grepl('max',second),
-         FirstMean = grepl('mean',first),
-         SecondMean = grepl('mean',second)) %>%
-  filter(!(FirstMax&SecondMean),
-         !(FirstMean&SecondMax),
-         metric == 'rho') %>%
-  mutate(MaxOrMean = case_when(FirstMax|SecondMax~'Max',
-                               FirstMean|SecondMean~'Mean')) %>%
-  mutate(TILScore = case_when(first %in% TIL_spearman_names ~ first,
-                              second %in% TIL_spearman_names ~ second),
-         OtherScore = case_when(!(first %in% TIL_spearman_names) ~ first,
-                                !(second %in% TIL_spearman_names) ~ second)) %>%
-  mutate(OtherScore = case_when(str_detect(OtherScore, 'ChangeIn') ~ str_replace(OtherScore, 'ChangeIn', 'D'),
-                                str_detect(OtherScore, 'maxChangeSodium') ~ str_replace(OtherScore, 'maxChangeSodium', 'DNa+max'),
-                                str_detect(OtherScore, 'meanChangeSodium') ~ str_replace(OtherScore, 'meanChangeSodium', 'DNa+mean'),
-                                str_detect(OtherScore, 'maxSodium') ~ str_replace(OtherScore, 'maxSodium', 'Na+max'),
-                                str_detect(OtherScore, 'meanSodium') ~ str_replace(OtherScore, 'meanSodium', 'Na+mean'),                                
-                                TRUE ~ OtherScore)) %>%
-  mutate(BaseTILScore = case_when(MaxOrMean=='Max'~str_remove(TILScore,'max'),
-                                  MaxOrMean=='Mean'~str_remove(TILScore,'mean')),
-         OtherScore = case_when(!(Population %in% c('TIL','TIL-Na'))~paste(sub(".*_","", Population),OtherScore),
-                                TRUE ~ OtherScore)) %>%
-  mutate(MaxOrMean = plyr::mapvalues(MaxOrMean,
-                                     from=c('Max','Mean'),
-                                     to=c('Max score correlations','Mean score correlations'))) %>%
-  filter(str_detect(OtherScore,' ICP')|str_detect(OtherScore,' CPP')|str_detect(OtherScore,'DNa+'))
-
-# Combine both dataframes
-CI.spearman.rhos <- rbind(CI.spearman.rhos,CI.diff.spearman.rhos) %>%
-  mutate(BaseTILScore = factor(BaseTILScore,levels=rev(c("TIL",
+  mutate(MaxOrMedian = plyr::mapvalues(MaxOrMedian,
+                                       from=c('Max','Median'),
+                                       to=c('Max score correlations','Median score correlations')),
+         BaseTILScore = factor(BaseTILScore,levels=rev(c("TIL",
                                                          "uwTIL",
                                                          "TIL_Basic",
                                                          "PILOT",
                                                          "TIL_1987"))),
-         OtherScore = factor(OtherScore,levels=c("EH ICPmax",
-                                                 "EH ICPmean",
-                                                 "HR ICPmax",
-                                                 "HR ICPmean",
-                                                 "EH CPPmax",
-                                                 "EH CPPmean",
-                                                 "HR CPPmax",
-                                                 "HR CPPmean",
+         OtherScore = factor(OtherScore,levels=c("ICPmaxEH",
+                                                 "ICPmedianEH",
+                                                 "ICPmaxHR",
+                                                 "ICPmedianHR",
+                                                 "CPPminEH",
+                                                 "CPPmedianEH",
+                                                 "CPPminHR",
+                                                 "CPPmedianHR",
                                                  "DNa+max",
                                                  "DNa+mean",
                                                  "GCS",
@@ -260,19 +241,73 @@ CI.spearman.rhos <- rbind(CI.spearman.rhos,CI.diff.spearman.rhos) %>%
                                                  "Pr(GOSE>6)",
                                                  "Pr(GOSE>7)")))
 
+# # Load and format Spearman's correlation confidence interval dataframe from differential calculation run
+# CI.diff.spearman.rhos <- read.csv('../results/bootstrapping_results/archive/differential_CI_spearman_rhos_results.csv',
+#                                   na.strings = c("NA","NaN","", " ")) %>%
+#   filter(Population=='TIL-ICP_HR',
+#          first=='ICPmax',
+#          metric=='rho',
+#          str_ends(second,'max')) %>%
+#   mutate(TILTimepoint='Static',
+#          FirstMax = grepl('max',first),
+#          SecondMax = grepl('max',second),
+#          FirstMean = grepl('mean',first),
+#          SecondMean = grepl('mean',second),
+#          FirstMedian = grepl('median',first),
+#          SecondMedian = grepl('median',second),
+#          MaxOrMedian = case_when(FirstMax|SecondMax~'Max',
+#                                  FirstMedian|SecondMedian~'Median'),
+#          TILScore = case_when(first %in% TIL_spearman_names ~ first,
+#                               second %in% TIL_spearman_names ~ second),
+#          OtherScore = case_when(!(first %in% TIL_spearman_names) ~ first,
+#                                 !(second %in% TIL_spearman_names) ~ second),
+#          BaseTILScore = case_when(MaxOrMedian=='Max'~str_remove(TILScore,'max'),
+#                                   MaxOrMedian=='Median'~str_remove(TILScore,'median')),
+#          OtherScore = case_when(!(Population %in% c('TIL','TIL-Na'))~paste0(OtherScore,sub(".*_","", Population)),
+#                                 TRUE ~ OtherScore)) %>%
+#   mutate(MaxOrMedian = plyr::mapvalues(MaxOrMedian,
+#                                        from=c('Max','Median'),
+#                                        to=c('Max score correlations','Median score correlations')))
+# 
+# # Combine both dataframes
+# CI.spearman.rhos <- rbind(CI.spearman.rhos,CI.diff.spearman.rhos) %>%
+#   mutate(BaseTILScore = factor(BaseTILScore,levels=rev(c("TIL",
+#                                                          "uwTIL",
+#                                                          "TIL_Basic",
+#                                                          "PILOT",
+#                                                          "TIL_1987"))),
+#          OtherScore = factor(OtherScore,levels=c("ICPmaxEH",
+#                                                  "ICPmedianEH",
+#                                                  "ICPmaxHR",
+#                                                  "ICPmedianHR",
+#                                                  "CPPminEH",
+#                                                  "CPPmedianEH",
+#                                                  "CPPminHR",
+#                                                  "CPPmedianHR",
+#                                                  "DNa+max",
+#                                                  "DNa+mean",
+#                                                  "GCS",
+#                                                  "GOSE",
+#                                                  "Pr(GOSE>1)",
+#                                                  "Pr(GOSE>3)",
+#                                                  "Pr(GOSE>4)",
+#                                                  "Pr(GOSE>5)",
+#                                                  "Pr(GOSE>6)",
+#                                                  "Pr(GOSE>7)")))
+
 ## Create and save Spearman's correlation plot
 # Create ggplot object for plot
 spearmans_correlation_plot <- CI.spearman.rhos %>%
   filter(!str_starts(OtherScore,'DNa+')) %>%
   ggplot() +
-  coord_cartesian(xlim = c(-.54,.54)) +
+  coord_cartesian(xlim = c(-.51,.51)) +
   geom_vline(xintercept = 0, color = "darkgray") +
   geom_errorbarh(aes(y = OtherScore, xmin = lo, xmax = hi, color = BaseTILScore),position=position_dodge(width=.675), height=.5)+
   geom_point(aes(y = OtherScore, x = median, color = BaseTILScore),position=position_dodge(width=.675),size=1)+
   scale_y_discrete(limits=rev) +
   xlab("Spearman's correlation coefficient (p)")+
   scale_color_manual(values=rev(c('#003f5c','#58508d','#bc5090','#ff6361','#ffa600')),guide=guide_legend(title = 'Scale',reverse = TRUE))+
-  facet_wrap(~MaxOrMean,
+  facet_wrap(~MaxOrMedian,
              scales = 'free',
              nrow = 1) +
   theme_minimal(base_family = 'Roboto Condensed') +
@@ -301,7 +336,7 @@ ggsave(file.path('../plots',Sys.Date(),'spearmans_correlation.svg'),spearmans_co
 
 ## Load and prepare formatted confidence intervals of repeated-measures correlation
 # Extract names of scales for repeated-measures correlation plot
-TIL_rmcorrs_names <- read.csv('../bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+TIL_rmcorrs_names <- read.csv('../results/bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   select(first,second) %>%
   unique() %>%
   pivot_longer(cols=c(first,second)) %>%
@@ -311,54 +346,57 @@ TIL_rmcorrs_names <- read.csv('../bootstrapping_results/CI_rmcorr_results.csv',n
   .$value
 
 # Load and format repeated-measures correlation confidence interval dataframe
-CI.rmcorrs <- read.csv('../bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+CI.rmcorrs <- read.csv('../results/bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(((first %in% TIL_rmcorrs_names)&!(second %in% TIL_rmcorrs_names))|(!(first %in% TIL_rmcorrs_names)&(second %in% TIL_rmcorrs_names))) %>%
   filter(metric == 'rmcorr') %>%
   mutate(OtherScore = case_when(!(first %in% TIL_rmcorrs_names) ~ first,
-                                !(second %in% TIL_rmcorrs_names) ~ second)) %>%
-  filter(OtherScore %in% c('TILPhysicianConcernsICP','TILPhysicianConcernsCPP')) %>%
+                                !(second %in% TIL_rmcorrs_names) ~ second),
+         Scale = case_when(first %in% TIL_rmcorrs_names ~ first,
+                           second %in% TIL_rmcorrs_names ~ second),
+         BaseTILScore = case_when(Scale=='TotalSum'~'TIL',
+                                  Scale=='TIL_Basic'~'TIL_Basic',
+                                  T~str_replace(Scale,'Sum',''))) %>%
+  filter(OtherScore %in% c('TILPhysicianConcernsICP','TILPhysicianConcernsCPP','CPP24EH','ICP24EH','CPP24HR','ICP24HR')) %>%
   mutate(OtherScore = case_when(OtherScore == "TILPhysicianConcernsICP" ~ "Physician concern of ICP",
                                 OtherScore == "TILPhysicianConcernsCPP" ~ "Physician concern of CPP",
-                                TRUE ~ OtherScore)) %>%
-  mutate(OtherScore = case_when(Population!='TIL'~paste(sub(".*_","", Population),OtherScore),
-                                TRUE ~ OtherScore))
-
-# Load and format repeated-measures correlation confidence interval dataframe from differential calculation run
-CI.diff.rmcorrs <- read.csv('../bootstrapping_results/differential_CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  filter(((first %in% TIL_rmcorrs_names)&!(second %in% TIL_rmcorrs_names))|(!(first %in% TIL_rmcorrs_names)&(second %in% TIL_rmcorrs_names))) %>%
-  filter(metric == 'rmcorr') %>%
-  mutate(OtherScore = case_when(!(first %in% TIL_rmcorrs_names) ~ first,
-                                !(second %in% TIL_rmcorrs_names) ~ second)) %>%
-  filter(OtherScore %in% c('ICPmean','CPPmean','ChangeInSodium','TILPhysicianConcernsICP','TILPhysicianConcernsCPP')) %>%
-  mutate(OtherScore = case_when(str_detect(OtherScore, 'mean') ~ str_replace(OtherScore, 'mean', '24'),
-                                OtherScore == "ChangeInSodium" ~ "DNa+24",
-                                OtherScore == "TILPhysicianConcernsICP" ~ "Physician concern of ICP",
-                                OtherScore == "TILPhysicianConcernsCPP" ~ "Physician concern of CPP",
-                                TRUE ~ OtherScore)) %>%
-  mutate(OtherScore = case_when(!(Population %in% c('TIL','TIL-Na'))~paste(sub(".*_","", Population),OtherScore),
-                                TRUE ~ OtherScore))
-
-# Combine both dataframes
-CI.rmcorrs <- rbind(CI.rmcorrs,CI.diff.rmcorrs) %>%
-  mutate(BaseTILScore = factor(Scale,levels=rev(c("TIL",
+                                TRUE ~ OtherScore),
+         BaseTILScore = factor(Scale,levels=rev(c("TIL",
                                                   "uwTIL",
                                                   "TIL_Basic",
                                                   "PILOT",
                                                   "TIL_1987"))),
-         OtherScore = factor(OtherScore,levels=c("EH ICP24",
-                                                 "HR ICP24",
-                                                 "EH CPP24",
-                                                 "HR CPP24",
+         OtherScore = factor(OtherScore,levels=c("ICP24EH",
+                                                 "ICP24HR",
+                                                 "CPP24EH",
+                                                 "CPP24HR",
                                                  "DNa+24",
                                                  "Physician concern of ICP",
                                                  "Physician concern of CPP")))
+
+# Load and format repeated-measures correlation confidence interval dataframe from differential calculation run
+# CI.diff.rmcorrs <- read.csv('../results/bootstrapping_results/differential_CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+#   filter(((first %in% TIL_rmcorrs_names)&!(second %in% TIL_rmcorrs_names))|(!(first %in% TIL_rmcorrs_names)&(second %in% TIL_rmcorrs_names))) %>%
+#   filter(metric == 'rmcorr') %>%
+#   mutate(OtherScore = case_when(!(first %in% TIL_rmcorrs_names) ~ first,
+#                                 !(second %in% TIL_rmcorrs_names) ~ second)) %>%
+#   filter(OtherScore %in% c('ICPmean','CPPmean','ChangeInSodium','TILPhysicianConcernsICP','TILPhysicianConcernsCPP')) %>%
+#   mutate(OtherScore = case_when(str_detect(OtherScore, 'mean') ~ str_replace(OtherScore, 'mean', '24'),
+#                                 OtherScore == "ChangeInSodium" ~ "DNa+24",
+#                                 OtherScore == "TILPhysicianConcernsICP" ~ "Physician concern of ICP",
+#                                 OtherScore == "TILPhysicianConcernsCPP" ~ "Physician concern of CPP",
+#                                 TRUE ~ OtherScore)) %>%
+#   mutate(OtherScore = case_when(!(Population %in% c('TIL','TIL-Na'))~paste(sub(".*_","", Population),OtherScore),
+#                                 TRUE ~ OtherScore))
+# 
+# # Combine both dataframes
+# CI.rmcorrs <- rbind(CI.rmcorrs,CI.diff.rmcorrs)
 
 ## Create and save repeated-measures correlation plot
 # Create ggplot object for plot
 rm_correlation_plot <- CI.rmcorrs %>%
   filter(!str_starts(OtherScore,'DNa+')) %>%
   ggplot() +
-  coord_cartesian(xlim = c(-.465,.465)) +
+  coord_cartesian(xlim = c(-.38,.38)) +
   geom_vline(xintercept = 0, color = "darkgray") +
   geom_errorbarh(aes(y = OtherScore, xmin = lo, xmax = hi, color = Scale),position=position_dodge(width=.675), height=.5)+
   geom_point(aes(y = OtherScore, x = median, color = Scale),position=position_dodge(width=.675),size=1)+
@@ -391,43 +429,45 @@ ggsave(file.path('../plots',Sys.Date(),'rm_correlation.svg'),rm_correlation_plot
 
 ## Load and prepare formatted confidence intervals of mixed effects coefficients
 # Extract names of scales for mixed effects coefficients plot
-TIL_mixed_effects_names <- read.csv('../bootstrapping_results/differential_CI_mixed_effects_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+TIL_mixed_effects_names <- read.csv('../results/bootstrapping_results/CI_mixed_effects_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(Type=='TotalScore',
          metric=='Coefficient',
-         !(Name%in%c('Intercept','Group Var'))) %>%
-  select(Formula,Name,Scale) %>%
+         !(Name%in%c('Intercept','Group Var','TILTimepoint'))) %>%
+  select(Formula,Name) %>%
   unique() %>%
-  mutate(Target=sub(" ~.*", "", Formula)) %>%
+  mutate(Target=sub(" ~.*","", Formula)) %>%
   filter(((grepl('Sum',Name))|(grepl('TIL_Basic',Name)))&(Target!='TotalSum')) %>%
   select(Formula) %>%
   unique() %>%
   .$Formula
 
 # Load and format mixed effects coefficients confidence interval dataframe
-CI.mixed.effects <- read.csv('../bootstrapping_results/differential_CI_mixed_effects_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+CI.mixed.effects <- read.csv('../results/bootstrapping_results/CI_mixed_effects_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(Formula %in% TIL_mixed_effects_names,
          Type=='TotalScore',
          metric=='Coefficient',
-         !(Name%in%c('Intercept','Group Var')),
-         metric == 'Coefficient')%>%
-  mutate(Target=sub(" ~.*", "", Formula)) %>%
-  filter(Target %in% c('CPPmean','ICPmean','ChangeInSodium')) %>%
-  mutate(Target = case_when(Target=='ICPmean'~'ICP24',
-                            Target=='CPPmean'~'CPP24',
-                            Target=='ChangeInSodium'~'DNa+24')) %>%
-  mutate(Target = case_when(!(Population %in% c('TIL','TIL-Na'))~paste(sub(".*_","", Population),Target),
-                            TRUE ~ Target)) %>%
-  mutate(FormattedFormula = paste0(Target,'~Scale')) %>%
+         !(Name%in%c('Intercept','Group Var','TILTimepoint'))) %>%
+  mutate(Target=sub(" ~.*", "", Formula),
+         Scale = case_when(Name=='TotalSum'~'TIL',
+                           Name=='TIL_Basic'~'TIL_Basic',
+                           T~str_replace(Name,'Sum',''))) %>%
+  # filter(Target %in% c('CPPmean','ICPmean','ChangeInSodium')) %>%
+  # mutate(Target = case_when(Target=='ICPmean'~'ICP24',
+  #                           Target=='CPPmean'~'CPP24',
+  #                           Target=='ChangeInSodium'~'DNa+24')) %>%
+  # mutate(Target = case_when(!(Population %in% c('TIL','TIL-Na'))~paste(sub(".*_","", Population),Target),
+  #                           TRUE ~ Target)) %>%
+  mutate(FormattedFormula = paste0(Target,'~DayICU+Scale')) %>%
   mutate(Scale = factor(Scale,levels=rev(c("TIL",
                                            "uwTIL",
                                            "TIL_Basic",
                                            "PILOT",
                                            "TIL_1987"))),
-         FormattedFormula = factor(FormattedFormula,levels=c("EH ICP24~Scale",
-                                                             "HR ICP24~Scale",
-                                                             "EH CPP24~Scale",
-                                                             "HR CPP24~Scale",
-                                                             "DNa+24~Scale")))
+         FormattedFormula = factor(FormattedFormula,levels=c("ICP24EH~DayICU+Scale",
+                                                             "ICP24HR~DayICU+Scale",
+                                                             "CPP24EH~DayICU+Scale",
+                                                             "CPP24HR~DayICU+Scale",
+                                                             "DNa+24~DayICU+Scale")))
 
 ## Create and save mixed effects coefficients plot
 # Create ggplot object for plot
@@ -470,16 +510,24 @@ ggsave(file.path('../plots',Sys.Date(),'mixed_effect_coefficients.svg'),mixed_ef
 # Load and filter dataframe of low-resolution ICP information
 ICP24_lores.df <- read.csv('../formatted_data/formatted_low_resolution_values.csv',
                            na.strings = c("NA","NaN","", " ")) %>%
+  filter(TILTimepoint<=7,
+         TILTimepoint>=1,
+         TILExpected==1,
+         !is.na(ICPmean),
+         !is.na(TotalSum)) %>%
   mutate(TotalTIL=as.factor(TotalSum),
          population = 'LowResolution') %>%
-  filter(TILTimepoint<=7) %>%
   group_by(TotalTIL) %>%
   mutate(NotOutlier = isnt_out_tukey(ICPmean))
-
 
 # Load and filter dataframe of high-resolution ICP information
 ICP24_hires.df <- read.csv('../formatted_data/formatted_high_resolution_values.csv',
                            na.strings = c("NA","NaN","", " ")) %>%
+  filter(TILTimepoint<=7,
+         TILTimepoint>=1,
+         TILExpected==1,
+         !is.na(ICPmean),
+         !is.na(TotalSum)) %>%
   mutate(TotalTIL=as.factor(TotalSum),
          population = 'HighResolution') %>%
   filter(TILTimepoint<=7) %>%
@@ -588,14 +636,18 @@ ggsave(file.path('../plots',Sys.Date(),'cpp24_til24.png'),CPP24.TIL24.violin.plo
 ### V. Figure 5: Discrimination of refractory intracranial hypertension status by TILmax and alternative scale maximum scores.
 ## Load and prepare refractory status dataframes
 # Calculate optimal cutpoints for refractory intracranial hypertension status detection
-refractory.ROC.cutpoints <- read.csv('../bootstrapping_results/compiled_ROC_refractory_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+refractory.ROC.cutpoints <- read.csv('../results/bootstrapping_results/compiled_ROCs_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   mutate(YoudensJ = TPR-FPR,
          Scale = str_remove(Scale,'max')) %>%
+  group_by(Scale,Threshold) %>%
+  summarise(lo=quantile(YoudensJ,.025),
+            median=median(YoudensJ,.5),
+            hi=quantile(YoudensJ,.975)) %>%
   group_by(Scale) %>%
-  slice(which.max(YoudensJ))
+  slice(which.max(median))
 
 # Load AUC confidence intervals for refractory intracranial hypertension status detection
-refractory.AUCs <- read.csv('../bootstrapping_results/CI_AUC_refractory_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+refractory.AUCs <- read.csv('../results/bootstrapping_results/CI_ROCs_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   mutate(Scale = str_remove(Scale,'max'))
 
 # Load maximum scale scores stratified by refractory intracranial hypertension status
@@ -653,7 +705,7 @@ dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
 ggsave(file.path('../plots',Sys.Date(),'til_maxes_refractory.svg'),refractory.TIL.maxes.plot,device= svglite,units='in',dpi=600,width=3.75,height = 2.3)
 
 ## Load and prepare ROC curves for changing maximum score thresholds
-refractory.ROC.curves <- read.csv('../bootstrapping_results/compiled_ROC_refractory_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+refractory.ROC.curves <- read.csv('../results/bootstrapping_results/compiled_ROC_refractory_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   mutate(YoudensJ = TPR-FPR,
          Scale = str_remove(Scale,'max'))
 
@@ -776,7 +828,7 @@ other.score.proto.labels <- c('TIL24','ICP24','CPP24','Physician concern of ICP'
 other.score.labels <- c('TIL24','ICP24EH','ICP24HR','CPP24EH','CPP24HR','Physician concern of ICP','Physician concern of CPP')
 
 # Load and format confidence intervals of repeated-measures correlations results involving TIL item correlations
-CI.rmcorr.results <- read.csv('../bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+CI.rmcorr.results <- read.csv('../results/bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(Scale == 'TIL',
          metric == 'rmcorr') %>%
   filter(((first %in% item.names)&(second %in% c('TILPhysicianConcernsICP','TILPhysicianConcernsCPP','TotalSum')))|((second %in% item.names)&(first %in% c('TILPhysicianConcernsICP','TILPhysicianConcernsCPP','TotalSum')))) %>%
@@ -786,7 +838,7 @@ CI.rmcorr.results <- read.csv('../bootstrapping_results/CI_rmcorr_results.csv',n
                                 second %in% other.score.names ~ second))
 
 # Load and format confidence intervals of repeated-measures correlations differential analysis results involving TIL item correlations
-CI.diff.rmcorr.results <- read.csv('../bootstrapping_results/differential_CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+CI.diff.rmcorr.results <- read.csv('../results/bootstrapping_results/differential_CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(Scale == 'TIL',
          metric == 'rmcorr') %>%
   filter(((first %in% item.names)&(second %in% other.score.names))|((second %in% item.names)&(first %in% other.score.names))) %>%
@@ -841,10 +893,10 @@ ggsave(file.path('../plots',Sys.Date(),'component_corrs.svg'),component.corrs,de
 
 ## Load and prepare mixed effect coefficients of TIL component items
 # Load manually prepared labels
-lmer.coeff.labels <- read_xlsx('../bootstrapping_results/coefficient_labels.xlsx')
+lmer.coeff.labels <- read_xlsx('../results/bootstrapping_results/coefficient_labels.xlsx')
 
 # Load and format mixed effect coefficients involving TIL component items
-CI.lmer.results <- read.csv('../bootstrapping_results/differential_CI_mixed_effects_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+CI.lmer.results <- read.csv('../results/bootstrapping_results/differential_CI_mixed_effects_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(Type == 'Component',
          !(Name %in% c('Group Var','Intercept')),
          metric == 'Coefficient',
@@ -990,7 +1042,7 @@ dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
 ggsave(file.path('../plots',Sys.Date(),'TIL_Basic_TIL_freqs.svg'),TILBasic.TIL.freq.table,device= svglite,units='in',dpi=600,width=7.5,height = 1.78)
 
 ## Load and prepare dataframe of information coverage of TIL(Basic) over ICU stay
-TIL.Basic.TIL.information <- read.csv('../bootstrapping_results/compiled_MI_entropy_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+TIL.Basic.TIL.information <- read.csv('../results/bootstrapping_results/compiled_MI_entropy_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(TILTimepoint!=0) %>%
   group_by(TILTimepoint,METRIC) %>%
   mutate(group_idx = row_number()) %>%
@@ -1201,7 +1253,7 @@ write.csv(long.miss.table,'../results/longitudinal_missingness_table.csv',row.na
 ### X. Supplementary Figure S3: Correlation matrices between total scores of TIL and alternative scales.
 ## Load and prepare inter-scale Spearman's correlation results
 # Load formatted Spearman's rho values for inter-scale comparisons
-inter.scale.spearmans <- read.csv('../bootstrapping_results/CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+inter.scale.spearmans <- read.csv('../results/bootstrapping_results/CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(((grepl('TIL',first))|(grepl('PILOT',first)))&((grepl('TIL',second))|(grepl('PILOT',second)))) %>%
   mutate(FirstMax = grepl('max',first),SecondMax = grepl('max',second)) %>%
   filter(FirstMax == SecondMax,
@@ -1278,7 +1330,7 @@ dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
 ggsave(file.path('../plots',Sys.Date(),'mean_scale_correlations.svg'),mean.scale.correlations,device=svglite,units='in',dpi=600,width=2.5,height = 2.73)
 
 # Load formatted repeated measures correlation values for inter-scale comparisons
-inter.scale.rmcorrs <- read.csv('../bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+inter.scale.rmcorrs <- read.csv('../results/bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(((grepl('Sum',first))|(grepl('TIL_Basic',first)))&((grepl('Sum',second))|(grepl('TIL_Basic',second)))) %>%
   filter(metric == 'rmcorr') %>%
   mutate(BaseFirst = plyr::mapvalues(first,
@@ -1332,7 +1384,7 @@ ggsave(file.path('../plots',Sys.Date(),'daily_scale_correlations.svg'),daily.sca
 item.names <- c('Positioning','Sedation','Neuromuscular','Paralysis','CSFDrainage','Ventricular','FluidLoading','Vasopressor','Hyperventilation','Ventilation','Mannitol','Hypertonic','Temperature','ICPSurgery','DecomCraniectomy')
 
 # Load formatted repeated measures correlation values for intra-scale comparisons
-intra.scale.rmcorrs <- read.csv('../bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+intra.scale.rmcorrs <- read.csv('../results/bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter((first %in% item.names)&(second %in% item.names),
          metric=='rmcorr') %>%
   mutate(first = factor(first,levels=item.names),

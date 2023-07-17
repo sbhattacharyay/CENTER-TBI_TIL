@@ -131,7 +131,8 @@ dynamic.vars <- dynamic.vars$label
 # Extract study-plausible combinations of TIL
 TIL.timepoint.combos <- read.csv('../formatted_data/formatted_high_resolution_values.csv') %>%
   filter(GUPI %in% study.static.values$GUPI,
-         TILTimepoint<=7,TILTimepoint>=1) %>%
+         TILTimepoint<=7,TILTimepoint>=1,
+         TILExpected==1) %>%
   select(GUPI,TILTimepoint) %>%
   unique()
 
