@@ -1,4 +1,4 @@
-# CENTER-TBI_TIL
+# Clinimetric assessment of the Therapy Intensity Level (TIL) scale for traumatic brain injury
 The Therapy Intensity Level scale for traumatic brain injury: clinimetric assessment on neuro-monitored patients across 52 European intensive care units
 
 ## Contents
