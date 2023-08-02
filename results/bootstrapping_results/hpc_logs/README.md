@@ -1,2 +1,1 @@
-# CENTER-TBI_TIL
-TIL validation on CENTER-TBI dataset
+# Directory for storing HPC logs during parallel, multi-array indexing of statistic calculations
