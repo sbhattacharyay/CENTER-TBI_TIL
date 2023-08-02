@@ -1,2 +1,1 @@
-# CENTER-TBI_TIL
-TIL validation on CENTER-TBI dataset
+# Directory for storing results per bootstrapping resample
