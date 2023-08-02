@@ -166,6 +166,10 @@ foreach(curr_imputation = (1:NUM.IMPUTATIONS), .inorder = F) %dopar% {
   # Save multiple imputation object
   saveRDS(mi.study.vars,file.path(curr.imp.dir,'study_var_mice_object.rds'))
   
+  # Train multiple imputation object for longitudinal variables with defined predictor set 
+  curr.amelia <- amelia(study.dynamic.values %>%
+                          select(GUPI,TILTimepoint,curr.var,curr.pred.set,-ICPMonitorStop), m = 1, ts = "TILTimepoint", cs ="GUPI",polytime=2,intercs = TRUE, p2s = 2, empri = 0.01 * nrow(study.dynamic.values))
+  
   # Extract current imputed variable set
   curr.imp <- complete(mi.study.vars, action = 1) %>%
     select(GUPI,c(static.vars,dynamic.vars))
