@@ -1,2 +1,1 @@
-# CENTER-TBI_TIL
-TIL validation on CENTER-TBI dataset
+# Directory for storing timestamps of CENTER-TBI information and ICU stays
