@@ -9,6 +9,7 @@ library(svglite)
 library(openxlsx)
 library(gridExtra)
 library(extrafont)
+library(reticulate)
 
 # Function to determine whether row is not outlier in group based on Tukey's fences
 isnt_out_tukey <- function(x, k = 1.5, na.rm = TRUE) {

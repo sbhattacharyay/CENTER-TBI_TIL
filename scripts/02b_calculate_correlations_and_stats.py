@@ -123,105 +123,105 @@ def main(array_task_id):
     lores_static_var_set = raw_static_var_set[raw_static_var_set.GUPI.isin(curr_TIL_ICPEH_resamples)].reset_index(drop=True)
     hires_static_var_set = raw_static_var_set[raw_static_var_set.GUPI.isin(curr_TIL_ICPHR_resamples)].reset_index(drop=True)
 
-    # ## Calculate Spearman's rhos
-    # # Calculate Spearman's rhos among global static values
-    # global_static_spearmans = calculate_spearman_rhos(global_static_var_set,global_static_var_set,'Global static Spearman rhos')
-    # global_static_spearmans['Population'] = 'TIL'
+    ## Calculate Spearman's rhos
+    # Calculate Spearman's rhos among global static values
+    global_static_spearmans = calculate_spearman_rhos(global_static_var_set,global_static_var_set,'Global static Spearman rhos')
+    global_static_spearmans['Population'] = 'TIL'
 
-    # # Calculate Spearman's rhos among ICP_EH static values
-    # lores_static_spearmans = calculate_spearman_rhos(lores_static_var_set,lores_static_var_set,'ICP_EH static Spearman rhos')
-    # lores_static_spearmans['Population'] = 'TIL-ICP_EH'
+    # Calculate Spearman's rhos among ICP_EH static values
+    lores_static_spearmans = calculate_spearman_rhos(lores_static_var_set,lores_static_var_set,'ICP_EH static Spearman rhos')
+    lores_static_spearmans['Population'] = 'TIL-ICP_EH'
 
-    # # Calculate Spearman's rhos among ICP_HR static values
-    # hires_static_spearmans = calculate_spearman_rhos(hires_static_var_set,hires_static_var_set,'ICP_HR static Spearman rhos')
-    # hires_static_spearmans['Population'] = 'TIL-ICP_HR'
+    # Calculate Spearman's rhos among ICP_HR static values
+    hires_static_spearmans = calculate_spearman_rhos(hires_static_var_set,hires_static_var_set,'ICP_HR static Spearman rhos')
+    hires_static_spearmans['Population'] = 'TIL-ICP_HR'
 
-    # # Compile static Spearman's rhos and format
-    # compiled_static_spearmans = pd.concat([global_static_spearmans,lores_static_spearmans,hires_static_spearmans],ignore_index=True)
-    # compiled_static_spearmans.insert(2,'TILTimepoint','Static')
+    # Compile static Spearman's rhos and format
+    compiled_static_spearmans = pd.concat([global_static_spearmans,lores_static_spearmans,hires_static_spearmans],ignore_index=True)
+    compiled_static_spearmans.insert(2,'TILTimepoint','Static')
 
-    # # Calculate Spearman's rhos among global dynamic values
-    # global_dynamic_spearmans = calculate_dynamic_spearman_rhos(global_dynamic_var_set,global_dynamic_var_set,'Global dynamic Spearman rhos')
-    # global_dynamic_spearmans['Population'] = 'TIL'
+    # Calculate Spearman's rhos among global dynamic values
+    global_dynamic_spearmans = calculate_dynamic_spearman_rhos(global_dynamic_var_set,global_dynamic_var_set,'Global dynamic Spearman rhos')
+    global_dynamic_spearmans['Population'] = 'TIL'
 
-    # # Calculate Spearman's rhos among ICP_EH dynamic values
-    # lores_dynamic_spearmans = calculate_dynamic_spearman_rhos(lores_dynamic_var_set,lores_dynamic_var_set,'ICP_EH dynamic Spearman rhos')
-    # lores_dynamic_spearmans['Population'] = 'TIL-ICP_EH'
+    # Calculate Spearman's rhos among ICP_EH dynamic values
+    lores_dynamic_spearmans = calculate_dynamic_spearman_rhos(lores_dynamic_var_set,lores_dynamic_var_set,'ICP_EH dynamic Spearman rhos')
+    lores_dynamic_spearmans['Population'] = 'TIL-ICP_EH'
 
-    # # Calculate Spearman's rhos among ICP_HR dynamic values
-    # hires_dynamic_spearmans = calculate_dynamic_spearman_rhos(hires_dynamic_var_set,hires_dynamic_var_set,'ICP_HR dynamic Spearman rhos')
-    # hires_dynamic_spearmans['Population'] = 'TIL-ICP_HR'
+    # Calculate Spearman's rhos among ICP_HR dynamic values
+    hires_dynamic_spearmans = calculate_dynamic_spearman_rhos(hires_dynamic_var_set,hires_dynamic_var_set,'ICP_HR dynamic Spearman rhos')
+    hires_dynamic_spearmans['Population'] = 'TIL-ICP_HR'
 
-    # # Concatenate all spearman dataframes into one and format
-    # compiled_spearmans = pd.concat([compiled_static_spearmans,global_dynamic_spearmans,lores_dynamic_spearmans,hires_dynamic_spearmans],ignore_index=True)
-    # compiled_spearmans['resample_idx'] = curr_rs_idx
+    # Concatenate all spearman dataframes into one and format
+    compiled_spearmans = pd.concat([compiled_static_spearmans,global_dynamic_spearmans,lores_dynamic_spearmans,hires_dynamic_spearmans],ignore_index=True)
+    compiled_spearmans['resample_idx'] = curr_rs_idx
 
-    # # Save concatenated dataframe
-    # compiled_spearmans.to_pickle(os.path.join(bs_results_dir,'compiled_spearman_rhos_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
+    # Save concatenated dataframe
+    compiled_spearmans.to_pickle(os.path.join(bs_results_dir,'compiled_spearman_rhos_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
-    # ## Calculate repeated-measures correlations
-    # # Calculate rmcorrs among TIL scores
-    # TIL_scores_list = ['TotalSum','TIL_Basic','uwTILSum','PILOTSum','TIL_1987Sum']
-    # across_TIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],'Across-TIL rmcorrs')
-    # across_TIL_rmcorrs['Population'] = 'TIL'
+    ## Calculate repeated-measures correlations
+    # Calculate rmcorrs among TIL scores
+    TIL_scores_list = ['TotalSum','TIL_Basic','uwTILSum','PILOTSum','TIL_1987Sum']
+    across_TIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],'Across-TIL rmcorrs')
+    across_TIL_rmcorrs['Population'] = 'TIL'
 
-    # # Calculate rmcorrs between TIL scores and physician concerns
-    # physician_concerns_list = ['TILPhysicianConcernsCPP','TILPhysicianConcernsICP']
-    # TIL_concerns_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'TIL-concerns rmcorrs')
-    # TIL_concerns_rmcorrs['Population'] = 'TIL'
+    # Calculate rmcorrs between TIL scores and physician concerns
+    physician_concerns_list = ['TILPhysicianConcernsCPP','TILPhysicianConcernsICP']
+    TIL_concerns_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'TIL-concerns rmcorrs')
+    TIL_concerns_rmcorrs['Population'] = 'TIL'
 
-    # # Calculate rmcorrs within-TIL scores
-    # TIL_components = ['CSFDrainage', 'DecomCraniectomy', 'FluidLoading', 'Hypertonic','ICPSurgery', 'Mannitol', 'Neuromuscular', 'Positioning', 'Sedation','Temperature', 'Vasopressor', 'Ventilation']
-    # within_TIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint','TotalSum']+TIL_components],global_dynamic_var_set[['GUPI','TILTimepoint','TotalSum']+TIL_components],'Within-TIL rmcorrs')
-    # within_TIL_rmcorrs['Population'] = 'TIL'
+    # Calculate rmcorrs within-TIL scores
+    TIL_components = ['CSFDrainage', 'DecomCraniectomy', 'FluidLoading', 'Hypertonic','ICPSurgery', 'Mannitol', 'Neuromuscular', 'Positioning', 'Sedation','Temperature', 'Vasopressor', 'Ventilation']
+    within_TIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint','TotalSum']+TIL_components],global_dynamic_var_set[['GUPI','TILTimepoint','TotalSum']+TIL_components],'Within-TIL rmcorrs')
+    within_TIL_rmcorrs['Population'] = 'TIL'
 
-    # # Calculate rmcorrs within-uwTIL scores
-    # uwTIL_components = ['uw'+comp for comp in TIL_components]
-    # within_uwTIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],global_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],'Within-uwTIL rmcorrs')
-    # within_uwTIL_rmcorrs['Population'] = 'TIL'
+    # Calculate rmcorrs within-uwTIL scores
+    uwTIL_components = ['uw'+comp for comp in TIL_components]
+    within_uwTIL_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],global_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],'Within-uwTIL rmcorrs')
+    within_uwTIL_rmcorrs['Population'] = 'TIL'
 
-    # # Calculate component correlations with physician concerns
-    # concern_component_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_components],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'Component-Concern rmcorrs')
-    # concern_component_rmcorrs['Population'] = 'TIL'
+    # Calculate component correlations with physician concerns
+    concern_component_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+TIL_components],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'Component-Concern rmcorrs')
+    concern_component_rmcorrs['Population'] = 'TIL'
 
-    # # Calculate unweighted component correlations with physician concerns
-    # concern_uwcomponent_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+uwTIL_components],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'uwComponent-Concern rmcorrs')
-    # concern_uwcomponent_rmcorrs['Population'] = 'TIL'
+    # Calculate unweighted component correlations with physician concerns
+    concern_uwcomponent_rmcorrs = calculate_rmcorr(global_dynamic_var_set[['GUPI','TILTimepoint']+uwTIL_components],global_dynamic_var_set[['GUPI','TILTimepoint']+physician_concerns_list],'uwComponent-Concern rmcorrs')
+    concern_uwcomponent_rmcorrs['Population'] = 'TIL'
 
-    # # Calculate correlation between TIL scores and low-resolution neuromonitoring
-    # lores_rmcorrs = calculate_rmcorr(lores_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list+TIL_components+uwTIL_components],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],'Low-resolution rmcorrs')
-    # lores_rmcorrs['Population'] = 'TIL-ICP_EH'
+    # Calculate correlation between TIL scores and low-resolution neuromonitoring
+    lores_rmcorrs = calculate_rmcorr(lores_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list+TIL_components+uwTIL_components],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],'Low-resolution rmcorrs')
+    lores_rmcorrs['Population'] = 'TIL-ICP_EH'
 
-    # # Calculate correlation between TIL scores and high-resolution neuromonitoring
-    # hires_rmcorrs = calculate_rmcorr(hires_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list+TIL_components+uwTIL_components],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],'High-resolution rmcorrs')
-    # hires_rmcorrs['Population'] = 'TIL-ICP_HR'
+    # Calculate correlation between TIL scores and high-resolution neuromonitoring
+    hires_rmcorrs = calculate_rmcorr(hires_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list+TIL_components+uwTIL_components],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],'High-resolution rmcorrs')
+    hires_rmcorrs['Population'] = 'TIL-ICP_HR'
 
-    # # Concatenate all repeated-measures correlation dataframes
-    # compiled_rmcorrs = pd.concat([across_TIL_rmcorrs,TIL_concerns_rmcorrs,within_TIL_rmcorrs,within_uwTIL_rmcorrs,concern_component_rmcorrs,concern_uwcomponent_rmcorrs,lores_rmcorrs,hires_rmcorrs],ignore_index=True)
-    # compiled_rmcorrs['resample_idx'] = curr_rs_idx
+    # Concatenate all repeated-measures correlation dataframes
+    compiled_rmcorrs = pd.concat([across_TIL_rmcorrs,TIL_concerns_rmcorrs,within_TIL_rmcorrs,within_uwTIL_rmcorrs,concern_component_rmcorrs,concern_uwcomponent_rmcorrs,lores_rmcorrs,hires_rmcorrs],ignore_index=True)
+    compiled_rmcorrs['resample_idx'] = curr_rs_idx
 
-    # # Save concatenated dataframe
-    # compiled_rmcorrs.to_pickle(os.path.join(bs_results_dir,'compiled_rmcorr_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
+    # Save concatenated dataframe
+    compiled_rmcorrs.to_pickle(os.path.join(bs_results_dir,'compiled_rmcorr_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
-    # ## Calculate mixed-effects regression coefficients
-    # # Regression model of ICP_EH on TIL scale sums
-    # TIL_lores_mlm = calc_melm(lores_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],TIL_scores_list,False,uwTIL_components,'Calculating ICP_EH ~ TotalSumScores')
+    ## Calculate mixed-effects regression coefficients
+    # Regression model of ICP_EH on TIL scale sums
+    TIL_lores_mlm = calc_melm(lores_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],TIL_scores_list,False,uwTIL_components,'Calculating ICP_EH ~ TotalSumScores')
 
-    # # Regression model of ICP_HR on TIL scale sums
-    # TIL_hires_mlm = calc_melm(hires_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],TIL_scores_list,False,uwTIL_components,'Calculating ICP_HR ~ TotalSumScores')
+    # Regression model of ICP_HR on TIL scale sums
+    TIL_hires_mlm = calc_melm(hires_dynamic_var_set[['GUPI','TILTimepoint']+TIL_scores_list],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],TIL_scores_list,False,uwTIL_components,'Calculating ICP_HR ~ TotalSumScores')
 
-    # # Regression model of ICP_EH on TIL scale components
-    # component_lores_mlm = calc_melm(lores_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],['uwTILSum'],True,uwTIL_components,'Calculating ICP_EH ~ TILComponents')
+    # Regression model of ICP_EH on TIL scale components
+    component_lores_mlm = calc_melm(lores_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],lores_dynamic_var_set[['GUPI','TILTimepoint','CPP24EH', 'ICP24EH']],['uwTILSum'],True,uwTIL_components,'Calculating ICP_EH ~ TILComponents')
 
-    # # Regression model of ICP_HR on TIL scale components
-    # component_hires_mlm = calc_melm(hires_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],['uwTILSum'],True,uwTIL_components,'Calculating ICP_HR ~ TILComponents')
+    # Regression model of ICP_HR on TIL scale components
+    component_hires_mlm = calc_melm(hires_dynamic_var_set[['GUPI','TILTimepoint','uwTILSum']+uwTIL_components],hires_dynamic_var_set[['GUPI','TILTimepoint','CPP24HR', 'ICP24HR']],['uwTILSum'],True,uwTIL_components,'Calculating ICP_HR ~ TILComponents')
     
-    # # Concatenate all mlm model information
-    # compiled_mlm_df = pd.concat([TIL_lores_mlm,TIL_hires_mlm,component_lores_mlm,component_hires_mlm],ignore_index=True)
-    # compiled_mlm_df['resample_idx'] = curr_rs_idx
+    # Concatenate all mlm model information
+    compiled_mlm_df = pd.concat([TIL_lores_mlm,TIL_hires_mlm,component_lores_mlm,component_hires_mlm],ignore_index=True)
+    compiled_mlm_df['resample_idx'] = curr_rs_idx
 
-    # # Save concatenated dataframe
-    # compiled_mlm_df.to_pickle(os.path.join(bs_results_dir,'compiled_mixed_effects_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
+    # Save concatenated dataframe
+    compiled_mlm_df.to_pickle(os.path.join(bs_results_dir,'compiled_mixed_effects_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
     ## Calculate ROC curves for refractory intracranial hypertension detection
     # Designate TIL score maximum columns
@@ -249,31 +249,46 @@ def main(array_task_id):
     # Save concatenated dataframe
     compiled_ROC_df.to_pickle(os.path.join(bs_results_dir,'compiled_ROCs_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
-    # ## Calculate mutual entropy between TIL and TIL_Basic
-    # # Calculate mutual entropy between TILmax scores and TIL_Basicmax
-    # max_mi = pd.DataFrame([_estimate_mi(global_static_var_set[TIL_max_list].values,global_static_var_set['TIL_Basicmax'].values,True,True)],columns=[nm.replace('max','') for nm in TIL_max_list])
-    # max_mi.insert(0,'TILTimepoint','Max')
-    # max_mi.insert(1,'METRIC','MutualInfo')
-    # max_entropy = pd.DataFrame([global_static_var_set[TIL_max_list].apply(lambda x: stats.entropy(x.value_counts().values/x.count())).values],columns=[nm.replace('max','') for nm in TIL_max_list])
-    # max_entropy.insert(0,'TILTimepoint','Max')
-    # max_entropy.insert(1,'METRIC','Entropy')
+    ## Calculate mutual entropy between TIL and TIL_Basic
+    # Designate TIL score maximum columns
+    TIL_max_list = ['TILmax','TIL_Basicmax','uwTILmax','PILOTmax','TIL_1987max']
 
-    # # Calculate mutual information and entropy for daily TIL scores
-    # s = global_dynamic_var_set.groupby('TILTimepoint',as_index=True).apply(lambda dfx: _estimate_mi(dfx[TIL_scores_list].values,dfx['TIL_Basic'].values,True,True)) 
-    # daily_mi = pd.DataFrame.from_dict(dict(zip(s.index, s.values)),orient='index',columns=TIL_scores_list).rename(columns={'TotalSum':'TIL','uwTILSum':'uwTIL','PILOTSum':'PILOT','TIL_1987Sum':'TIL_1987'})
-    # daily_mi.insert(0,'TILTimepoint',daily_mi.index.values)
-    # daily_mi.insert(1,'METRIC','MutualInfo')
-    # daily_entropy = global_dynamic_var_set.groupby('TILTimepoint',as_index=False).apply(lambda dfx: dfx[TIL_scores_list].apply(lambda x: stats.entropy(x.value_counts().values/x.count()))).rename(columns={'TotalSum':'TIL','uwTILSum':'uwTIL','PILOTSum':'PILOT','TIL_1987Sum':'TIL_1987'})
-    # daily_entropy.insert(1,'METRIC','Entropy')
+    # Designate TIL score median columns
+    TIL_median_list = ['TILmedian','TIL_Basicmedian','uwTILmedian','PILOTmedian','TIL_1987median']
+    TIL_scores_list = ['TotalSum','TIL_Basic','uwTILSum','PILOTSum','TIL_1987Sum']
 
-    # # Concatenate current daily/max mutual information and entropy to running list
-    # compiled_MI_entropy_df = pd.concat([daily_mi,daily_entropy,max_mi,max_entropy],ignore_index=True)
+    # Calculate mutual entropy between TILmax scores and TIL_Basicmax
+    max_mi = pd.DataFrame([_estimate_mi(global_static_var_set[TIL_max_list].values,global_static_var_set['TIL_Basicmax'].values,True,True)],columns=[nm.replace('max','') for nm in TIL_max_list])
+    max_mi.insert(0,'TILTimepoint','Max')
+    max_mi.insert(1,'METRIC','MutualInfo')
+    max_entropy = pd.DataFrame([global_static_var_set[TIL_max_list].apply(lambda x: stats.entropy(x.value_counts().values/x.count())).values],columns=[nm.replace('max','') for nm in TIL_max_list])
+    max_entropy.insert(0,'TILTimepoint','Max')
+    max_entropy.insert(1,'METRIC','Entropy')
 
-    # # Add resampling index to mutual information dataframe
-    # compiled_MI_entropy_df['resample_idx'] = curr_rs_idx
+    # Calculate mutual entropy between TILmedian scores and TIL_Basicmedian
+    median_mi = pd.DataFrame([_estimate_mi(global_static_var_set[TIL_median_list].values,global_static_var_set['TIL_Basicmedian'].values,True,True)],columns=[nm.replace('median','') for nm in TIL_median_list])
+    median_mi.insert(0,'TILTimepoint','Median')
+    median_mi.insert(1,'METRIC','MutualInfo')
+    median_entropy = pd.DataFrame([global_static_var_set[TIL_median_list].apply(lambda x: stats.entropy(x.value_counts().values/x.count())).values],columns=[nm.replace('median','') for nm in TIL_median_list])
+    median_entropy.insert(0,'TILTimepoint','Median')
+    median_entropy.insert(1,'METRIC','Entropy')
 
-    # # Save concatenated dataframe
-    # compiled_MI_entropy_df.to_pickle(os.path.join(bs_results_dir,'compiled_mutual_info_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
+    # Calculate mutual information and entropy for daily TIL scores
+    s = global_dynamic_var_set.groupby('TILTimepoint',as_index=True).apply(lambda dfx: _estimate_mi(dfx[TIL_scores_list].values,dfx['TIL_Basic'].values,True,True)) 
+    daily_mi = pd.DataFrame.from_dict(dict(zip(s.index, s.values)),orient='index',columns=TIL_scores_list).rename(columns={'TotalSum':'TIL','uwTILSum':'uwTIL','PILOTSum':'PILOT','TIL_1987Sum':'TIL_1987'})
+    daily_mi.insert(0,'TILTimepoint',daily_mi.index.values)
+    daily_mi.insert(1,'METRIC','MutualInfo')
+    daily_entropy = global_dynamic_var_set.groupby('TILTimepoint',as_index=False).apply(lambda dfx: dfx[TIL_scores_list].apply(lambda x: stats.entropy(x.value_counts().values/x.count()))).rename(columns={'TotalSum':'TIL','uwTILSum':'uwTIL','PILOTSum':'PILOT','TIL_1987Sum':'TIL_1987'})
+    daily_entropy.insert(1,'METRIC','Entropy')
+
+    # Concatenate current daily/max mutual information and entropy to running list
+    compiled_MI_entropy_df = pd.concat([daily_mi,daily_entropy,max_mi,max_entropy,median_mi,median_entropy],ignore_index=True)
+
+    # Add resampling index to mutual information dataframe
+    compiled_MI_entropy_df['resample_idx'] = curr_rs_idx
+
+    # Save concatenated dataframe
+    compiled_MI_entropy_df.to_pickle(os.path.join(bs_results_dir,'compiled_mutual_info_resample_'+str(curr_rs_idx).zfill(4)+'.pkl'))
 
 if __name__ == '__main__':
     

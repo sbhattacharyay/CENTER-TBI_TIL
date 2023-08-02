@@ -16,6 +16,9 @@
 # IX. Supplementary Figure S2: Missingness of longitudinal study measures
 # X. Supplementary Figure S3: Correlation matrices between total scores of TIL and alternative scales.
 # XI. Supplementary Figure S4: Inter-item correlation matrices for daily scores of TIL and alternative scales.
+# XII. Table 3: Optimised ranges for TIL categorisation
+# XIII. Supplementary Table 4: TIL thresholds for detection of day of surgery
+# XIV. Supplementary Figure S5: Internal reliability of TIL and uwTIL
 
 ### I. Initialisation
 # Import necessary libraries
@@ -35,9 +38,13 @@ library(forcats)
 library(yardstick)
 library(naniar)
 library(ggplotify)
+library(reticulate)
+library(ltm)
 
 # Import custom plotting functions
 source('functions/plotting.R')
+use_python("/usr/local/bin/python3")
+source_python("functions/pickle_reader.py")
 
 ### II. Figure 2: Distributions of TIL and alternative scales.
 ## Load and prepare formatted TILsummaries scores dataframe
@@ -51,22 +58,22 @@ formatted.uwTIL.max.mean <- read.csv('../formatted_data/formatted_unweighted_TIL
 
 formatted.TIL.max <- read.csv('../formatted_data/formatted_TIL_max.csv',
                               na.strings = c("NA","NaN","", " ")) %>%
-  select(GUPI,TILmax) %>%
-  left_join(read.csv('../formatted_data/formatted_TIL_Basic_max.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TIL_Basicmax)) %>%
-  left_join(read.csv('../formatted_data/formatted_PILOT_max.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,PILOTmax)) %>%
-  left_join(read.csv('../formatted_data/formatted_TIL_1987_max.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TIL_1987max)) %>%
-  left_join(formatted.uwTIL.max.mean%>%select(GUPI,uwTILmax)) %>%
+  dplyr::select(GUPI,TILmax) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_Basic_max.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TIL_Basicmax)) %>%
+  left_join(read.csv('../formatted_data/formatted_PILOT_max.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,PILOTmax)) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_1987_max.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TIL_1987max)) %>%
+  left_join(formatted.uwTIL.max.mean%>%dplyr::select(GUPI,uwTILmax)) %>%
   pivot_longer(cols=-GUPI,names_to = 'Scale',values_to = 'Score') %>%
   mutate(Scale = str_remove(Scale,'max'),
          MedianMax='Max over first week in ICU')
 
 formatted.TIL.median <- read.csv('../formatted_data/formatted_TIL_median.csv',
                                  na.strings = c("NA","NaN","", " ")) %>%
-  select(GUPI,TILmedian) %>%
-  left_join(read.csv('../formatted_data/formatted_TIL_Basic_median.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TIL_Basicmedian)) %>%
-  left_join(read.csv('../formatted_data/formatted_PILOT_median.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,PILOTmedian)) %>%
-  left_join(read.csv('../formatted_data/formatted_TIL_1987_median.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TIL_1987median)) %>%
-  left_join(formatted.uwTIL.max.mean%>%select(GUPI,uwTILmedian)) %>%
+  dplyr::select(GUPI,TILmedian) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_Basic_median.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TIL_Basicmedian)) %>%
+  left_join(read.csv('../formatted_data/formatted_PILOT_median.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,PILOTmedian)) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_1987_median.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TIL_1987median)) %>%
+  left_join(formatted.uwTIL.max.mean%>%dplyr::select(GUPI,uwTILmedian)) %>%
   pivot_longer(cols=-GUPI,names_to = 'Scale',values_to = 'Score') %>%
   mutate(Scale = str_remove(Scale,'median'),
          MedianMax='Median over first week in ICU')
@@ -110,11 +117,11 @@ ggsave(file.path('../plots',Sys.Date(),'til_median_maxes.svg'),TIL.medians.maxes
 ## Load formatted TIL scores over first week of ICU stay
 # Load formatted TIL24 scores dataframe and select relevant columns
 formatted.TIL.scores <- read.csv('../formatted_data/formatted_TIL_scores.csv',na.strings = c("NA","NaN","", " ")) %>%
-  select(GUPI,TILTimepoint,TotalSum) %>%
-  left_join(read.csv('../formatted_data/formatted_TIL_Basic_scores.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TILTimepoint,TIL_Basic)) %>%
-  left_join(read.csv('../formatted_data/formatted_PILOT_scores.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TILTimepoint,PILOTSum)) %>%
-  left_join(read.csv('../formatted_data/formatted_TIL_1987_scores.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TILTimepoint,TIL_1987Sum)) %>%
-  left_join(read.csv('../formatted_data/formatted_unweighted_TIL_scores.csv',na.strings = c("NA","NaN","", " "))%>%select(GUPI,TILTimepoint,uwTILSum)) %>%
+  dplyr::select(GUPI,TILTimepoint,TotalSum) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_Basic_scores.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TILTimepoint,TIL_Basic)) %>%
+  left_join(read.csv('../formatted_data/formatted_PILOT_scores.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TILTimepoint,PILOTSum)) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_1987_scores.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TILTimepoint,TIL_1987Sum)) %>%
+  left_join(read.csv('../formatted_data/formatted_unweighted_TIL_scores.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TILTimepoint,uwTILSum)) %>%
   rename(TIL24=TotalSum,
          TILBasic24 = TIL_Basic,
          PILOT24 = PILOTSum,
@@ -162,12 +169,12 @@ ggsave(file.path('../plots',Sys.Date(),'til_24s.png'),TIL.24s.violin.plot,units=
 ## Load and prepare formatted confidence intervals of Spearmans
 # Extract names of scales for Spearman's correlation plot
 TIL_spearman_names <- read.csv('../results/bootstrapping_results/CI_spearman_rhos_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  select(first,second) %>%
+  dplyr::select(first,second) %>%
   unique() %>%
   pivot_longer(cols=c(first,second)) %>%
   filter((grepl('TIL',value))|(grepl('PILOT',value)),
          (grepl('max',value))|(grepl('median',value))) %>%
-  select(value) %>%
+  dplyr::select(value) %>%
   unique() %>%
   .$value
 
@@ -337,11 +344,11 @@ ggsave(file.path('../plots',Sys.Date(),'spearmans_correlation.svg'),spearmans_co
 ## Load and prepare formatted confidence intervals of repeated-measures correlation
 # Extract names of scales for repeated-measures correlation plot
 TIL_rmcorrs_names <- read.csv('../results/bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  select(first,second) %>%
+  dplyr::select(first,second) %>%
   unique() %>%
   pivot_longer(cols=c(first,second)) %>%
   filter((grepl('Sum',value))|(grepl('TIL_Basic',value))) %>%
-  select(value) %>%
+  dplyr::select(value) %>%
   unique() %>%
   .$value
 
@@ -433,11 +440,11 @@ TIL_mixed_effects_names <- read.csv('../results/bootstrapping_results/CI_mixed_e
   filter(Type=='TotalScore',
          metric=='Coefficient',
          !(Name%in%c('Intercept','Group Var','TILTimepoint'))) %>%
-  select(Formula,Name) %>%
+  dplyr::select(Formula,Name) %>%
   unique() %>%
   mutate(Target=sub(" ~.*","", Formula)) %>%
   filter(((grepl('Sum',Name))|(grepl('TIL_Basic',Name)))&(Target!='TotalSum')) %>%
-  select(Formula) %>%
+  dplyr::select(Formula) %>%
   unique() %>%
   .$Formula
 
@@ -637,31 +644,102 @@ ggsave(file.path('../plots',Sys.Date(),'cpp24_til24.png'),CPP24.TIL24.violin.plo
 ## Load and prepare refractory status dataframes
 # Calculate optimal cutpoints for refractory intracranial hypertension status detection
 refractory.ROC.cutpoints <- read.csv('../results/bootstrapping_results/compiled_ROCs_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  mutate(YoudensJ = TPR-FPR,
-         Scale = str_remove(Scale,'max')) %>%
+  mutate(YoudensJ = TPR-FPR) %>%
   group_by(Scale,Threshold) %>%
   summarise(lo=quantile(YoudensJ,.025),
-            median=median(YoudensJ,.5),
+            median=median(YoudensJ),
             hi=quantile(YoudensJ,.975)) %>%
   group_by(Scale) %>%
-  slice(which.max(median))
+  slice(which.max(median)) %>%
+  mutate(MedianMax = case_when(grepl('max',Scale)~'Max over first week in ICU',
+                               grepl('median',Scale)~'Median over first week in ICU'),
+         Scale = case_when(MedianMax=='Max over first week in ICU'~str_replace(Scale,'max',''),
+                           MedianMax=='Median over first week in ICU'~str_replace(Scale,'median',''),
+                           T~Scale))
 
 # Load AUC confidence intervals for refractory intracranial hypertension status detection
-refractory.AUCs <- read.csv('../results/bootstrapping_results/CI_ROCs_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  mutate(Scale = str_remove(Scale,'max'))
+refractory.AUCs <- read.csv('../results/bootstrapping_results/compiled_ROCs_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+  dplyr::select(Scale,AUC,resample_idx) %>%
+  unique() %>%
+  group_by(Scale) %>%
+  summarise(lo=quantile(AUC,.025),
+            median=median(AUC),
+            hi=quantile(AUC,.975),
+            resamples = n())
+
+# Calculate ROC-based metrics for refractory intracranial hypertension detection
+CI.ROCs.results <- read.csv('../results/bootstrapping_results/compiled_ROCs_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+  mutate(Sensitivity = TPR,
+         Specificity = 1-FPR,
+         YoudensJ = TPR-FPR) %>%
+  dplyr::select(Scale,Threshold,Sensitivity,Specificity,YoudensJ) %>%
+  pivot_longer(cols = c(Sensitivity,Specificity,YoudensJ),names_to ='METRIC',values_to ='VALUES') %>%
+  group_by(Scale,Threshold,METRIC) %>%
+  summarise(lo = 100*quantile(VALUES,.025),
+            median = 100*quantile(VALUES,.5),
+            hi = 100*quantile(VALUES,.975),
+            count = n()) %>%
+  mutate(FormattedCI=sprintf('%.0f (%.0f–%.0f)',median,lo,hi)) %>%
+  filter(Scale %in% c("PILOTmax","PILOTmedian","TIL_1987max","TIL_1987median","TIL_Basicmax","TIL_Basicmedian","TILmax","TILmedian","uwTILmax","uwTILmedian"))
+
+# Format and save for table
+table.CI.ROCs.results <- CI.ROCs.results %>%
+  filter(Scale %in% c("TILmax","TILmedian","TIL_Basicmax","TIL_Basicmedian"),
+         Threshold<=31) %>%
+  dplyr::select(Scale,Threshold,METRIC,FormattedCI) %>%
+  pivot_wider(names_from = 'METRIC', values_from = 'FormattedCI') %>%
+  mutate(Scale = factor(Scale,levels=c("TILmax","TILmedian","TIL_Basicmax","TIL_Basicmedian"))) %>%
+  arrange(Scale,Threshold)
+write.xlsx(table.CI.ROCs.results,'../results/threshold_AUCs_refractory.xlsx')
+
+# Load TILmax and TILmedian
+formatted.uwTIL.max.mean <- read.csv('../formatted_data/formatted_unweighted_TIL_scores.csv',na.strings = c("NA","NaN","", " ")) %>%
+  filter(TILTimepoint<=7,TILTimepoint>=1) %>%
+  group_by(GUPI) %>%
+  summarise(uwTILmax = max(uwTILSum,na.rm=T),
+            uwTILmean = mean(uwTILSum,na.rm=T),
+            uwTILmedian = median(uwTILSum,na.rm=T))
+
+formatted.TIL.max <- read.csv('../formatted_data/formatted_TIL_max.csv',
+                              na.strings = c("NA","NaN","", " ")) %>%
+  dplyr::select(GUPI,TILmax) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_Basic_max.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TIL_Basicmax)) %>%
+  left_join(read.csv('../formatted_data/formatted_PILOT_max.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,PILOTmax)) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_1987_max.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TIL_1987max)) %>%
+  left_join(formatted.uwTIL.max.mean%>%dplyr::select(GUPI,uwTILmax)) %>%
+  pivot_longer(cols=-GUPI,names_to = 'Scale',values_to = 'Score') %>%
+  mutate(Scale = str_remove(Scale,'max'),
+         MedianMax='Max over first week in ICU')
+
+formatted.TIL.median <- read.csv('../formatted_data/formatted_TIL_median.csv',
+                                 na.strings = c("NA","NaN","", " ")) %>%
+  dplyr::select(GUPI,TILmedian) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_Basic_median.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TIL_Basicmedian)) %>%
+  left_join(read.csv('../formatted_data/formatted_PILOT_median.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,PILOTmedian)) %>%
+  left_join(read.csv('../formatted_data/formatted_TIL_1987_median.csv',na.strings = c("NA","NaN","", " "))%>%dplyr::select(GUPI,TIL_1987median)) %>%
+  left_join(formatted.uwTIL.max.mean%>%dplyr::select(GUPI,uwTILmedian)) %>%
+  pivot_longer(cols=-GUPI,names_to = 'Scale',values_to = 'Score') %>%
+  mutate(Scale = str_remove(Scale,'median'),
+         MedianMax='Median over first week in ICU')
+
+formatted.TIL.maxes.medians <- rbind(formatted.TIL.max,formatted.TIL.median) %>%
+  mutate(Scale = factor(Scale,levels=c('TIL','uwTIL','TIL_Basic','PILOT','TIL_1987')))
 
 # Load maximum scale scores stratified by refractory intracranial hypertension status
-refractory.TIL.maxes <- formatted.TIL.maxes.means %>%
-  left_join(read.csv('../formatted_data/formatted_outcome_and_demographics.csv',na.strings = c("NA","NaN","", " ")) %>% select(GUPI,RefractoryICP)) %>%
-  filter(MeanMax=='Max over first week in ICU',
-         !is.na(RefractoryICP)) %>%
-  left_join(refractory.ROC.cutpoints %>% select(Scale,Threshold)) %>%
+refractory.TIL.maxes <- formatted.TIL.maxes.medians %>%
+  left_join(read.csv('../formatted_data/formatted_outcome_and_demographics.csv',na.strings = c("NA","NaN","", " ")) %>% dplyr::select(GUPI,RefractoryICP)) %>%
+  filter(!is.na(RefractoryICP)) %>%
+  left_join(refractory.ROC.cutpoints %>% dplyr::select(Scale,MedianMax,Threshold)) %>%
   mutate(Scale = factor(Scale,levels=c('TIL','uwTIL','TIL_Basic','PILOT','TIL_1987')),
-         RefractoryICP = plyr::mapvalues(RefractoryICP,c(0,1),c('No (n=707)','Yes (n=157)')))
+         RefractoryICP = plyr::mapvalues(RefractoryICP,c(0,1),c('No','Yes')))
 
 ## Create and save plot of maximum score distributions by refractory ICH status
 # Create ggplot object
 refractory.TIL.maxes.plot <- ggplot() +
+  facet_wrap(~MedianMax,
+             ncol = 2,
+             strip.position = "left",
+             scales = 'free') +
   geom_split_violin(data=refractory.TIL.maxes,mapping = aes(x = Scale, y = Score, fill=factor(RefractoryICP)),scale = "width",trim=TRUE,lwd=1.3/.pt,alpha=.5) +
   stat_summary(data=refractory.TIL.maxes,
                mapping = aes(x = Scale, y = Score, color=factor(RefractoryICP)),
@@ -674,7 +752,7 @@ refractory.TIL.maxes.plot <- ggplot() +
                position = position_dodge(width = .3),
                fill='white',
                lwd=1.3/.pt) +
-  geom_errorbar(data = refractory.ROC.cutpoints%>%filter(str_starts(Scale,'ICP',negate=T)), aes(x = Scale, ymin = Threshold, ymax = Threshold),lwd=1.3/.pt) +
+  geom_errorbar(data = refractory.ROC.cutpoints%>%filter(str_starts(Scale,'ICP',negate=T),str_starts(Scale,'CPP',negate=T)), aes(x = Scale, ymin = Threshold, ymax = Threshold),lwd=1.3/.pt) +
   coord_cartesian(ylim = c(0,31)) +
   scale_y_continuous(breaks = seq(0,31,5),minor_breaks = seq(0,31,1)) +
   scale_fill_manual(values=c('#003f5c','#de425b')) +
@@ -690,7 +768,7 @@ refractory.TIL.maxes.plot <- ggplot() +
     axis.text.x = element_text(size = 6, color = "black",margin = margin(r = 0)),
     axis.text.y = element_text(size = 6, color = "black",margin = margin(r = 0)),
     axis.title.x = element_blank(),
-    axis.title.y = element_text(size = 7, color = "black",face = 'bold'),
+    axis.title.y = element_blank(),
     strip.text = element_text(size = 7, color = "black",face = 'bold'),
     strip.placement = "outside",
     legend.position = 'bottom',
@@ -702,12 +780,17 @@ refractory.TIL.maxes.plot <- ggplot() +
 
 # Create directory for current date and save plots of maximum score distributions by refractory ICH status
 dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
-ggsave(file.path('../plots',Sys.Date(),'til_maxes_refractory.svg'),refractory.TIL.maxes.plot,device= svglite,units='in',dpi=600,width=3.75,height = 2.3)
+ggsave(file.path('../plots',Sys.Date(),'til_maxes_refractory.svg'),refractory.TIL.maxes.plot,device= svglite,units='in',dpi=600,width=7.5,height = 2.3)
 
 ## Load and prepare ROC curves for changing maximum score thresholds
 refractory.ROC.curves <- read.csv('../results/bootstrapping_results/compiled_ROC_refractory_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   mutate(YoudensJ = TPR-FPR,
          Scale = str_remove(Scale,'max'))
+CI.refractory.ROC.curves <- read.csv('../results/bootstrapping_results/CI_ROCs_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+  filter(Scale=='TILmedian',
+         metric %in% c('FPR','TPR')) %>%
+  dplyr::select(Scale,Threshold,metric,median) %>%
+  pivot_wider(values_from = 'median',names_from = 'metric')
 
 ## Create and save plot of ROC curve for changing maximum score thresholds
 # Create ggplot object
@@ -743,16 +826,47 @@ refractory.TIL.max.ROC <- refractory.ROC.curves %>%
     plot.margin=margin(0,0,0,0)
   )
 
+refractory.TIL.median.ROC <- CI.refractory.ROC.curves %>%
+  ggplot() +
+  geom_segment(x = 0, y = 0, xend = 1, yend = 1,alpha = 0.5,linetype = "dashed",lwd=.75, color = 'gray')+
+  geom_line(aes(x=FPR,y=TPR,color=Threshold),lwd=1.3) +
+  scale_color_gradient2(na.value='black',low='#003f5c',mid='#eacaf4',high='#de425b',midpoint=15.5,limits = c(0,31),breaks=seq(0,31,by=5)) + 
+  scale_linetype_manual(values = c('twodash','dotted')) +
+  geom_point(x=0.277056277,y=0.8144330,fill=NA, color="darkred", size=5, shape = 1)+
+  xlab("False positive rate") +
+  ylab("True positive rate") +
+  guides(color = guide_colourbar(title="TILmax threshold for refractory ICP (>=)",title.position = "top",title.hjust=.5,barwidth = .5, barheight = 7.5,ticks = FALSE))+
+  theme_classic(base_family = 'Roboto Condensed') +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x = element_text(size = 6, color = "black",margin = margin(r = 0)),
+    axis.text.y = element_text(size = 6, color = "black",margin = margin(r = 0)),
+    axis.title.x = element_text(size = 7, color = "black",face = 'bold'),
+    axis.title.y = element_text(size = 7, color = "black",face = 'bold'),
+    aspect.ratio = 1,
+    panel.border = element_rect(colour = 'black', fill=NA, linewidth = .75),
+    legend.position = 'right',
+    legend.title = element_text(size = 7, color = "black", face = 'bold'),
+    legend.text=element_text(size=6),
+    axis.line = element_blank(),
+    legend.key.size = unit(1.3/.pt,"line"),
+    legend.margin=margin(0,0,0,0),
+    plot.margin=margin(0,0,0,0)
+  )
+
 # Create directory for current date and save ROC curve
 dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
 ggsave(file.path('../plots',Sys.Date(),'til_maxes_ROC.svg'),refractory.TIL.max.ROC,device= svglite,units='in',dpi=600,width=3.75,height = 2.3)
+ggsave(file.path('../plots',Sys.Date(),'til_medians_ROC.svg'),refractory.TIL.median.ROC,device= svglite,units='in',dpi=600,width=3.75,height = 2.3)
 
 ### VI. Figure 6: Association of TIL component items with TIL24 and other study measures.
 ## Calculate median TIL component item scores per total TIL24 score
 TIL.24.components <- read.csv('../formatted_data/formatted_TIL_scores.csv',
                               na.strings = c("NA","NaN","", " ")) %>%
   filter(TILTimepoint<=7) %>%
-  select(-starts_with('TILPhysician')) %>%
+  dplyr::select(-starts_with('TILPhysician'),-DailyTILCompleteStatus) %>%
   pivot_longer(cols=-c(GUPI,TILTimepoint,TILDate,ICUAdmTimeStamp,ICUDischTimeStamp,TotalSum),
                names_to = 'Item',
                values_to = 'Score') %>%
@@ -788,10 +902,10 @@ TIL.24.components.plot <- TIL.24.components %>%
             position = position_stack(vjust = .5),
             color='white',
             size=5/.pt) +
-  geom_col(data=TIL.24.components %>% select(TotalSum,SumInstanceCount) %>% unique() %>% mutate(ModCount = -SumInstanceCount*(31/5)/547),
+  geom_col(data=TIL.24.components %>% dplyr::select(TotalSum,SumInstanceCount) %>% unique() %>% mutate(ModCount = -SumInstanceCount*(31/5)/547),
            aes(y=ModCount),
            fill='lightgrey') +
-  geom_text(data=TIL.24.components %>% select(TotalSum,SumInstanceCount) %>% unique() %>% mutate(ModCount = -SumInstanceCount*(31/5)/547),
+  geom_text(data=TIL.24.components %>% dplyr::select(TotalSum,SumInstanceCount) %>% unique() %>% mutate(ModCount = -SumInstanceCount*(31/5)/547),
             aes(label = SumInstanceCount,y=ModCount),
             vjust = 1.5,
             color='black',
@@ -823,46 +937,57 @@ ggsave(file.path('../plots',Sys.Date(),'TIL_24_components_plot.svg'),TIL.24.comp
 # Explicitly define TIL item and score labels
 item.names <- c('Positioning','Sedation','Neuromuscular','CSFDrainage','FluidLoading','Vasopressor','Ventilation','Mannitol','Hypertonic','Temperature','ICPSurgery','DecomCraniectomy')
 item.labels <- c('Positioning','Sedation','Paralysis','CSF drainage','Fluid loading','Vasopressors','Ventilation','Mannitol','Hypertonic saline','Temperature control','Intracranial surgery','Decompressive craniectomy')
-other.score.names <- c('TotalSum','ICPmean','CPPmean','TILPhysicianConcernsICP','TILPhysicianConcernsCPP')
+other.score.names <- c('TotalSum','ICP24EH','ICP24HR','CPP24EH','CPP24HR','TILPhysicianConcernsICP','TILPhysicianConcernsCPP')
 other.score.proto.labels <- c('TIL24','ICP24','CPP24','Physician concern of ICP','Physician concern of CPP')
 other.score.labels <- c('TIL24','ICP24EH','ICP24HR','CPP24EH','CPP24HR','Physician concern of ICP','Physician concern of CPP')
 
 # Load and format confidence intervals of repeated-measures correlations results involving TIL item correlations
 CI.rmcorr.results <- read.csv('../results/bootstrapping_results/CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  filter(Scale == 'TIL',
-         metric == 'rmcorr') %>%
-  filter(((first %in% item.names)&(second %in% c('TILPhysicianConcernsICP','TILPhysicianConcernsCPP','TotalSum')))|((second %in% item.names)&(first %in% c('TILPhysicianConcernsICP','TILPhysicianConcernsCPP','TotalSum')))) %>%
+  filter(metric == 'rmcorr') %>%
+  filter(((first %in% item.names)&(second %in% c('TILPhysicianConcernsICP','TILPhysicianConcernsCPP','TotalSum','ICP24EH','ICP24HR','CPP24EH','CPP24HR')))|((second %in% item.names)&(first %in% c('TILPhysicianConcernsICP','TILPhysicianConcernsCPP','TotalSum','ICP24EH','ICP24HR','CPP24EH','CPP24HR')))) %>%
   mutate(TILComponent = case_when(first %in% item.names ~ first,
                                   second %in% item.names ~ second),
          OtherScore = case_when(first %in% other.score.names ~ first,
-                                second %in% other.score.names ~ second))
-
-# Load and format confidence intervals of repeated-measures correlations differential analysis results involving TIL item correlations
-CI.diff.rmcorr.results <- read.csv('../results/bootstrapping_results/differential_CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  filter(Scale == 'TIL',
-         metric == 'rmcorr') %>%
-  filter(((first %in% item.names)&(second %in% other.score.names))|((second %in% item.names)&(first %in% other.score.names))) %>%
-  mutate(TILComponent = case_when(first %in% item.names ~ first,
-                                  second %in% item.names ~ second),
-         OtherScore = case_when(first %in% other.score.names ~ first,
-                                second %in% other.score.names ~ second))
-
-# Combine dataframes and complete formatting
-CI.rmcorr.results <- rbind(CI.rmcorr.results,CI.diff.rmcorr.results) %>%
+                                second %in% other.score.names ~ second)) %>%
   mutate(TILComponent = factor(plyr::mapvalues(TILComponent,
                                                from=item.names,
                                                to=item.labels),
                                levels=item.labels),
          OtherScore = plyr::mapvalues(OtherScore,
                                       from=other.score.names,
-                                      to=other.score.proto.labels)) %>%
-  mutate(OtherScore = factor(case_when((OtherScore=='ICP24')|(OtherScore=='CPP24')~paste0(OtherScore,sub(".*_","", Population)),
-                                       TRUE ~ OtherScore),
-                             levels=other.score.labels),
+                                      to=other.score.labels)) %>%
+  mutate(OtherScore = factor(OtherScore,levels=other.score.labels),
          BoxScore = case_when(lo<0&hi>0~NA,
                               T~median),
          LabelColor = case_when(is.na(BoxScore)|abs(median)<.46~'black',
                                 T~'white'))
+# 
+# # Load and format confidence intervals of repeated-measures correlations differential analysis results involving TIL item correlations
+# CI.diff.rmcorr.results <- read.csv('../results/bootstrapping_results/differential_CI_rmcorr_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+#   filter(Scale == 'TIL',
+#          metric == 'rmcorr') %>%
+#   filter(((first %in% item.names)&(second %in% other.score.names))|((second %in% item.names)&(first %in% other.score.names))) %>%
+#   mutate(TILComponent = case_when(first %in% item.names ~ first,
+#                                   second %in% item.names ~ second),
+#          OtherScore = case_when(first %in% other.score.names ~ first,
+#                                 second %in% other.score.names ~ second))
+
+# # Combine dataframes and complete formatting
+# CI.rmcorr.results <- rbind(CI.rmcorr.results,CI.diff.rmcorr.results) %>%
+#   mutate(TILComponent = factor(plyr::mapvalues(TILComponent,
+#                                                from=item.names,
+#                                                to=item.labels),
+#                                levels=item.labels),
+#          OtherScore = plyr::mapvalues(OtherScore,
+#                                       from=other.score.names,
+#                                       to=other.score.proto.labels)) %>%
+#   mutate(OtherScore = factor(case_when((OtherScore=='ICP24')|(OtherScore=='CPP24')~paste0(OtherScore,sub(".*_","", Population)),
+#                                        TRUE ~ OtherScore),
+#                              levels=other.score.labels),
+#          BoxScore = case_when(lo<0&hi>0~NA,
+#                               T~median),
+#          LabelColor = case_when(is.na(BoxScore)|abs(median)<.46~'black',
+#                                 T~'white'))
 
 ## Create and save plot of TIL component items repeated-measures correlation
 # Create ggplot object
@@ -896,14 +1021,17 @@ ggsave(file.path('../plots',Sys.Date(),'component_corrs.svg'),component.corrs,de
 lmer.coeff.labels <- read_xlsx('../results/bootstrapping_results/coefficient_labels.xlsx')
 
 # Load and format mixed effect coefficients involving TIL component items
-CI.lmer.results <- read.csv('../results/bootstrapping_results/differential_CI_mixed_effects_results.csv',na.strings = c("NA","NaN","", " ")) %>%
+CI.lmer.results <- read.csv('../results/bootstrapping_results/CI_mixed_effects_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   filter(Type == 'Component',
-         !(Name %in% c('Group Var','Intercept')),
+         !(Name %in% c('Group Var','Intercept','TILTimepoint')),
          metric == 'Coefficient',
-         str_starts(Formula,'ICPmean')|str_starts(Formula,'CPPmean')|str_starts(Formula,'ChangeInSodium')) %>%
+         str_starts(Formula,'ICP24')|str_starts(Formula,'CPP24')|str_starts(Formula,'ChangeInSodium')) %>%
   left_join(lmer.coeff.labels) %>%
-  mutate(DepVar = case_when(str_starts(Formula,'ChangeInSodium')~'DNa+24',
-                            TRUE~paste0(sub(".*_","", Population),' ',sub("\\mean.*", "", Formula),'24'))) %>%
+  mutate(DepVar = sub("\\ ~.*", "", Formula),
+         DepVar = case_when(DepVar=='ICP24EH'~'EH ICP24',
+                            DepVar=='ICP24HR'~'HR ICP24',
+                            DepVar=='CPP24EH'~'EH CPP24',
+                            DepVar=='CPP24HR'~'HR CPP24')) %>%
   mutate(Label = fct_reorder(Label, Order),
          DepVar = factor(DepVar,
                          levels=c('EH ICP24','HR ICP24','EH CPP24','HR CPP24','DNa+24')),
@@ -1006,8 +1134,8 @@ empty.distributions <- TILBasic.TIL.distributions %>%
   mutate(count=0,
          percent=0,
          FormattedPercent='0%') %>%
-  anti_join(TILBasic.TIL.distributions %>% select(TotalSum,TIL_Basic)) %>%
-  left_join(TILBasic.TIL.distributions %>% select(TotalSum,totalCount) %>% unique())
+  anti_join(TILBasic.TIL.distributions %>% dplyr::select(TotalSum,TIL_Basic)) %>%
+  left_join(TILBasic.TIL.distributions %>% dplyr::select(TotalSum,totalCount) %>% unique())
 
 # Combine two dataframes
 TILBasic.TIL.distributions <- rbind(TILBasic.TIL.distributions,empty.distributions)
@@ -1042,17 +1170,14 @@ dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
 ggsave(file.path('../plots',Sys.Date(),'TIL_Basic_TIL_freqs.svg'),TILBasic.TIL.freq.table,device= svglite,units='in',dpi=600,width=7.5,height = 1.78)
 
 ## Load and prepare dataframe of information coverage of TIL(Basic) over ICU stay
-TIL.Basic.TIL.information <- read.csv('../results/bootstrapping_results/compiled_MI_entropy_results.csv',na.strings = c("NA","NaN","", " ")) %>%
-  filter(TILTimepoint!=0) %>%
+TIL.Basic.TIL.information <- read.csv('../results/bootstrapping_results/compiled_mutual_info_results.csv',na.strings = c("NA","NaN","", " ")) %>%
   group_by(TILTimepoint,METRIC) %>%
   mutate(group_idx = row_number()) %>%
-  select(group_idx,TILTimepoint,METRIC,TotalSum,TIL_Basic) %>%
-  pivot_longer(cols=c(TotalSum,TIL_Basic),
+  dplyr::select(group_idx,TILTimepoint,METRIC,TIL,TIL_Basic) %>%
+  pivot_longer(cols=c(TIL,TIL_Basic),
                names_to = 'Scale') %>%
   filter(!((METRIC=='MutualInfo')&(Scale=='TIL_Basic'))) %>%
-  mutate(Scale = case_when(Scale=='TotalSum'~'TIL',
-                           TRUE~'TIL_Basic'),
-         METRIC = paste0(METRIC,'_',Scale)) %>%
+  mutate(METRIC = paste0(METRIC,'_',Scale)) %>%
   pivot_wider(names_from = METRIC, values_from = value, id_cols = c(TILTimepoint,group_idx)) %>%
   mutate(percent_coverage = (MutualInfo_TIL/Entropy_TIL)*100) %>%
   pivot_longer(cols=-c(TILTimepoint,group_idx),names_to = 'METRIC') %>%
@@ -1070,7 +1195,7 @@ TIL.Basic.TIL.information <- read.csv('../results/bootstrapping_results/compiled
 ## Create and save plots of information coverage of TIL(Basic) over ICU stay
 # Create ggplot object
 information_coverage <- ggplot() +
-  geom_line(data=TIL.Basic.TIL.information%>%filter(TILTimepoint!='Max'),
+  geom_line(data=TIL.Basic.TIL.information%>%filter(!TILTimepoint%in%c('Max','Median')),
             mapping=aes(x=TILTimepoint, y=median, group=1),
             color='#7a5195',
             lwd=1.3) +
@@ -1128,14 +1253,14 @@ compiled.MCCs <- do.call(rbind, datalist) %>%
 ## Load and prepare static measures used in analysis
 # Load baseline demographic and functional outcome score dataframe
 demo.outcome <- read.csv('../formatted_data/formatted_outcome_and_demographics.csv',na.strings = c("NA","NaN","", " ")) %>%
-  select(-c(Race,ICURaisedICP,DecompressiveCranReason,starts_with('AssociatedStudy'))) %>%
+  dplyr::select(-c(Race,ICURaisedICP,DecompressiveCranReason,starts_with('AssociatedStudy'))) %>%
   rename(GCS=GCSScoreBaselineDerived, GOSE=GOSE6monthEndpointDerived) %>%
   rename_with(~gsub("Pr.GOSE.","Pr_GOSE_gt_", .x, fixed = TRUE))
 
 ## Create UpSet plots of static feature missingness
-overall.upset.plot <- gg_miss_upset(demo.outcome %>% select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
-lores.upset.plot <- gg_miss_upset(demo.outcome %>% filter(LowResolutionSet==1) %>% select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
-hires.upset.plot <- gg_miss_upset(demo.outcome %>% filter(HighResolutionSet==1) %>% select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
+overall.upset.plot <- gg_miss_upset(demo.outcome %>% dplyr::select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
+lores.upset.plot <- gg_miss_upset(demo.outcome %>% filter(LowResolutionSet==1) %>% dplyr::select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
+hires.upset.plot <- gg_miss_upset(demo.outcome %>% filter(HighResolutionSet==1) %>% dplyr::select(-c(ends_with('Set'))), nsets = n_var_miss(demo.outcome),nintersects = NA)
 plot_grid(as.ggplot(overall.upset.plot), as.ggplot(lores.upset.plot), as.ggplot(hires.upset.plot), labels=c("A", "B", "C"), ncol = 3, nrow = 1)
 
 ### IX. Supplementary Figure S2: Missingness of longitudinal study measures
@@ -1176,7 +1301,7 @@ long.missingness.plot <- long.avail.counts %>%
             position = position_stack(vjust = .5),
             color='white',
             size=6/.pt) +
-  geom_text(data=long.avail.counts %>% select(TILTimepoint,Substudy,TotalCount) %>% unique(),
+  geom_text(data=long.avail.counts %>% dplyr::select(TILTimepoint,Substudy,TotalCount) %>% unique(),
             aes(label = TotalCount,y=TotalCount),
             vjust = -.5,
             color='black',
@@ -1433,3 +1558,294 @@ component.correlations <- intra.scale.rmcorrs %>%
 # Create directory for current date and save plots of intra-scale repeated measures correlations
 dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
 ggsave(file.path('../plots',Sys.Date(),'component_intra_correlations.png'),component.correlations,units='in',dpi=600,width=7.5,height = 8)
+
+### XII. Table 3: Optimised ranges for TIL categorisation
+## Load and prepare information
+# Load formatted TIL scores
+formatted.TIL.scores <- read.csv('../formatted_data/formatted_TIL_scores.csv',
+                                 na.strings = c("NA","NaN","", " "))
+
+# Load formatted TIL(Basic) scores
+formatted.TILBasic.scores <- read.csv('../formatted_data/formatted_TIL_Basic_scores.csv',
+                                      na.strings = c("NA","NaN","", " "))
+
+# Load refractory intracranial hypertension status
+formatted.refractory.ICP.values <- read.csv('../formatted_data/formatted_outcome_and_demographics.csv',
+                                            na.strings = c("NA","NaN","", " ")) %>%
+  dplyr::select(GUPI,RefractoryICP)
+
+# Load TIL validation resamples
+TIL.validation.resamples <- read.csv('../results/bootstrapping_results/resamples/TIL_validation/TIL_validation_resamples.csv')
+
+## Calculate 95% confidence intervals for table metrics
+# Create empty lists to store results
+categories <- c()
+sensitivities <- c()
+specificities <- c()
+accuracies <- c()
+resample.indices <- c()
+
+# Iterate through 
+for (curr.rs.idx in unique(TIL.validation.resamples$RESAMPLE_IDX)){
+  
+  # Get current imputation index
+  curr.imp.idx <- unique(TIL.validation.resamples %>%
+                           filter(RESAMPLE_IDX==curr.rs.idx) %>%
+                           .$IMPUTATION_IDX)
+  
+  # Get current GUPIs
+  curr.GUPIs <- unique(TIL.validation.resamples %>%
+                         filter(RESAMPLE_IDX==curr.rs.idx) %>%
+                         .$GUPI)
+  
+  # Define directory of current imputation
+  curr.imp.dir <- file.path('../formatted_data','imputed_sets',sprintf("imp%03d",curr.imp.idx))
+  
+  # Load and filter formatted dynamic variable sets
+  global.dynamic.var.set <- read.csv(file.path(curr.imp.dir,'dynamic_var_set.csv')) %>%
+    dplyr::select(GUPI,TILTimepoint,TotalSum,TIL_Basic,ICPSurgery,DecomCraniectomy) %>%
+    filter(GUPI %in% curr.GUPIs) %>%
+    mutate(TIL_Basic = factor(TIL_Basic),
+           SurgIndicator = factor(as.integer((ICPSurgery+DecomCraniectomy)>0)),
+           SurgPred = factor(as.integer(TotalSum>=9)),
+           TILBasicPred = factor(case_when(TotalSum>=9~4,
+                                           TotalSum>=7~3,
+                                           TotalSum>=3~2,
+                                           TotalSum>=1~1,
+                                           T ~ 0)))
+  
+  # Load and filter formatted static variable sets
+  global.static.var.set <- read.csv(file.path(curr.imp.dir,'static_var_set.csv')) %>%
+    dplyr::select(GUPI,TILmedian,TILmax,RefractoryICP) %>%
+    filter(GUPI %in% curr.GUPIs) %>%
+    mutate(RefractoryICP = factor(RefractoryICP),
+           RefractoryMaxPred = factor(as.integer(TILmax>=14)),
+           RefractoryMedianPred = factor(as.integer(TILmedian>=7.5)))
+  
+  # Add category labels
+  categories <- c(categories,
+                  c('Surgery','TILBasic','MaxRefractory','MedianRefractory'))
+  
+  # Add sensitivity scores
+  sensitivities <- c(sensitivities,
+                     c(sens_vec(global.dynamic.var.set$SurgIndicator,global.dynamic.var.set$SurgPred,event_level = 'second'),
+                       sens_vec(global.dynamic.var.set$TIL_Basic,global.dynamic.var.set$TILBasicPred,estimator = 'macro'),
+                       sens_vec(global.static.var.set$RefractoryICP,global.static.var.set$RefractoryMaxPred,event_level = 'second'),
+                       sens_vec(global.static.var.set$RefractoryICP,global.static.var.set$RefractoryMedianPred,event_level = 'second')))
+  
+  # Add sensitivity scores
+  specificities <- c(specificities,
+                     c(spec_vec(global.dynamic.var.set$SurgIndicator,global.dynamic.var.set$SurgPred,event_level = 'second'),
+                       spec_vec(global.dynamic.var.set$TIL_Basic,global.dynamic.var.set$TILBasicPred,estimator = 'macro'),
+                       spec_vec(global.static.var.set$RefractoryICP,global.static.var.set$RefractoryMaxPred,event_level = 'second'),
+                       spec_vec(global.static.var.set$RefractoryICP,global.static.var.set$RefractoryMedianPred,event_level = 'second')))
+  
+  # Add accuracy scores
+  accuracies <- c(accuracies,
+                  c(accuracy_vec(global.dynamic.var.set$SurgIndicator,global.dynamic.var.set$SurgPred),
+                    accuracy_vec(global.dynamic.var.set$TIL_Basic,global.dynamic.var.set$TILBasicPred),
+                    accuracy_vec(global.static.var.set$RefractoryICP,global.static.var.set$RefractoryMaxPred),
+                    accuracy_vec(global.static.var.set$RefractoryICP,global.static.var.set$RefractoryMedianPred)))
+  
+  # Add resample index labels
+  resample.indices <- c(resample.indices,
+                        c(curr.rs.idx,curr.rs.idx,curr.rs.idx,curr.rs.idx))
+}
+
+# Compile all results into a dataframe
+compiled.range.results <- data.frame(RESAMPLE_IDX=resample.indices,
+                                     CATEGORY=categories,
+                                     SENSITIVITY=sensitivities,
+                                     SPECIFICITY=specificities,
+                                     ACCURACY=accuracies)
+
+# Save compiled results
+write.csv(compiled.range.results,'../results/bootstrapping_results/compiled_TIL_range_results.csv',row.names = F)
+
+# Calculate 95% confidence interval
+CI.TIL.range.results <- read.csv('../results/bootstrapping_results/compiled_TIL_range_results.csv') %>%
+  pivot_longer(cols=c('SENSITIVITY','SPECIFICITY','ACCURACY'),names_to = 'METRIC') %>%
+  group_by(CATEGORY,METRIC) %>%
+  summarise(lo=100*quantile(value,.025),
+            median=100*quantile(value,.5),
+            hi=100*quantile(value,.975),
+            count = n()) %>%
+  mutate(FormattedCI = sprintf('%.0f%% (%.0f–%.0f%%)',median,lo,hi)) %>%
+  pivot_wider(id_cols = CATEGORY,names_from = METRIC,values_from = FormattedCI)
+
+### XIII. Supplementary Table 4: TIL thresholds for detection of day of surgery
+## Load and prepare information
+# Load formatted TIL scores
+formatted.TIL.scores <- read.csv('../formatted_data/formatted_TIL_scores.csv',
+                                 na.strings = c("NA","NaN","", " "))
+
+# Load TIL validation resamples
+TIL.validation.resamples <- read.csv('../results/bootstrapping_results/resamples/TIL_validation/TIL_validation_resamples.csv')
+
+## Calculate 95% confidence intervals for table metrics
+# Create empty list to store results
+listOfDataFrames <- vector(mode = "list", length = length(unique(TIL.validation.resamples$RESAMPLE_IDX)))
+
+# Iterate through bootstrapping resamples
+for (curr.rs.idx in unique(TIL.validation.resamples$RESAMPLE_IDX)){
+  
+  # Get current imputation index
+  curr.imp.idx <- unique(TIL.validation.resamples %>%
+                           filter(RESAMPLE_IDX==curr.rs.idx) %>%
+                           .$IMPUTATION_IDX)
+  
+  # Get current GUPIs
+  curr.GUPIs <- unique(TIL.validation.resamples %>%
+                         filter(RESAMPLE_IDX==curr.rs.idx) %>%
+                         .$GUPI)
+  
+  # Define directory of current imputation
+  curr.imp.dir <- file.path('../formatted_data','imputed_sets',sprintf("imp%03d",curr.imp.idx))
+  
+  # Load and filter formatted dynamic variable sets
+  curr.roc.curve <- read.csv(file.path(curr.imp.dir,'dynamic_var_set.csv')) %>%
+    dplyr::select(GUPI,TILTimepoint,TotalSum,ICPSurgery,DecomCraniectomy) %>%
+    filter(GUPI %in% curr.GUPIs) %>%
+    mutate(SurgIndicator = factor(as.integer((ICPSurgery+DecomCraniectomy)>0))) %>%
+    roc_curve(SurgIndicator, TotalSum, event_level='second') %>%
+    mutate(youdensJ = specificity + sensitivity - 1)
+  
+  # Add current calculated dataframe to running list
+  listOfDataFrames[[curr.rs.idx]] <- curr.roc.curve
+}
+
+# Compile all results into a dataframe
+compiled.roc.curves <- do.call("rbind", listOfDataFrames)
+
+# Save compiled results
+write.csv(compiled.roc.curves,'../results/bootstrapping_results/compiled_surgery_ROCs_results.csv',row.names = F)
+
+# Calculate 95% confidence interval
+CI.surgery.ROC.results <- read.csv('../results/bootstrapping_results/compiled_surgery_ROCs_results.csv') %>%
+  pivot_longer(cols=c('specificity','sensitivity','youdensJ'),names_to = 'METRIC') %>%
+  group_by(.threshold,METRIC) %>%
+  summarise(lo=100*quantile(value,.025),
+            median=100*quantile(value,.5),
+            hi=100*quantile(value,.975),
+            count = n()) %>%
+  mutate(FormattedCI = sprintf('%.0f%% (%.0f–%.0f%%)',median,lo,hi)) %>%
+  pivot_wider(id_cols = .threshold,names_from = METRIC,values_from = FormattedCI)
+
+### XIV. Supplementary Figure S5: Internal reliability of TIL and uwTIL
+## Load and prepare information
+# Load formatted TIL scores
+formatted.TIL.scores <- read.csv('../formatted_data/formatted_TIL_scores.csv',
+                                 na.strings = c("NA","NaN","", " "))
+
+# Load TIL validation resamples
+TIL.validation.resamples <- read.csv('../results/bootstrapping_results/resamples/TIL_validation/TIL_validation_resamples.csv')
+
+# Define names of TIL component items
+TIL.component.names <- c("CSFDrainage","DecomCraniectomy","FluidLoading","Hypertonic","ICPSurgery","Mannitol","Neuromuscular","Positioning","Sedation","Temperature","Vasopressor","Ventilation")
+
+# Define names of uwTIL component items
+uwTIL.component.names <- paste0('uw',TIL.component.names)
+
+## Calculate 95% confidence intervals of Cronbach's alpha
+# Create empty vectors to store results
+scales <- c()
+timepoints <- c()
+alphas <- c()
+resample.indices <- c()
+
+# Iterate through bootstrapping resamples
+for (curr.rs.idx in unique(TIL.validation.resamples$RESAMPLE_IDX)){
+  
+  # Get current imputation index
+  curr.imp.idx <- unique(TIL.validation.resamples %>%
+                           filter(RESAMPLE_IDX==curr.rs.idx) %>%
+                           .$IMPUTATION_IDX)
+  
+  # Get current GUPIs
+  curr.GUPIs <- unique(TIL.validation.resamples %>%
+                         filter(RESAMPLE_IDX==curr.rs.idx) %>%
+                         .$GUPI)
+  
+  # Define directory of current imputation
+  curr.imp.dir <- file.path('../formatted_data','imputed_sets',sprintf("imp%03d",curr.imp.idx))
+  
+  # Load and filter formatted dynamic variable sets
+  global.dynamic.var.set <- read.csv(file.path(curr.imp.dir,'dynamic_var_set.csv')) %>%
+    filter(GUPI %in% curr.GUPIs) %>%
+    dplyr::dplyr::select(GUPI,TILTimepoint,TIL.component.names,uwTIL.component.names)
+  
+  # Calculate TIL Cronbach's alpha
+  curr.TIL.alphas <- global.dynamic.var.set %>%
+    group_by(TILTimepoint) %>%
+    group_map(~cronbach.alpha(.x[,TIL.component.names])$alpha) %>%
+    unlist()
+  
+  # Calculate uwTIL Cronbach's alpha
+  curr.uwTIL.alphas <- global.dynamic.var.set %>%
+    group_by(TILTimepoint) %>%
+    group_map(~cronbach.alpha(.x[,uwTIL.component.names])$alpha) %>%
+    unlist()
+  
+  # Append vectors to running dataframes
+  scales <- c(scales,rep('TIL',7),rep('uwTIL',7))
+  timepoints <- c(timepoints,rep(seq(1,7),2))
+  alphas <- c(alphas,curr.TIL.alphas,curr.uwTIL.alphas)
+  resample.indices <- c(resample.indices,rep(curr.rs.idx,14))
+}
+
+# Compile all results into a dataframe
+compiled.alpha.results <- data.frame(RESAMPLE_IDX=resample.indices,
+                                     TILTimepoint = timepoints,
+                                     SCALE=scales,
+                                     ALPHA=alphas)
+
+# Save compiled results
+write.csv(compiled.alpha.results,'../results/bootstrapping_results/compiled_cronbach_alpha_results.csv',row.names = F)
+
+# Calculate 95% confidence interval
+CI.alpha.results <- read.csv('../results/bootstrapping_results/compiled_cronbach_alpha_results.csv') %>%
+  group_by(SCALE,TILTimepoint) %>%
+  summarise(lo=quantile(ALPHA,.025),
+            median=quantile(ALPHA,.5),
+            hi=quantile(ALPHA,.975),
+            count = n()) %>%
+  mutate(FormattedCI = sprintf('%.2f (%.2f–%.2f)',median,lo,hi),
+         TILTimepoint = paste('Day',TILTimepoint))
+
+# Create ggplot of Cronbach's alphas of TIL and uwTIL over time
+cronbachs.aplha <- CI.alpha.results %>%
+  ggplot() +
+  geom_line(mapping=aes(x=TILTimepoint, y=median, color=SCALE, group = SCALE),
+            lwd=1.3) +
+  geom_point(mapping=aes(x=TILTimepoint, y=median, color=SCALE),
+             size=2,
+             position=position_dodge(0.1)) +
+  geom_errorbar(mapping=aes(x=TILTimepoint, ymin=lo, ymax=hi, color=SCALE),
+                width=.35,
+                position=position_dodge(0.1)) +
+  coord_cartesian(ylim = c(0.25,.75)) +
+  xlab("Timepoint during ICU stay")+
+  ylab("Cronbach's alpha")+
+  scale_color_manual(values=c('#003f5c','#58508d'),guide=guide_legend(title = 'Scale',reverse = FALSE))+
+  theme_minimal(base_family = 'Roboto Condensed') +
+  theme(
+    axis.title.y = element_text(size = 7, color = "black",face = 'bold'),
+    axis.text.x = element_text(size = 6, color = 'black'),
+    axis.text.y = element_text(size = 6, color = 'black'),
+    axis.title.x = element_text(size = 7, color = "black",face = 'bold'),
+    panel.border = element_blank(),
+    axis.line.x = element_line(size=1/.pt),
+    axis.text = element_text(color='black'),
+    legend.position = 'bottom',
+    panel.spacing = unit(10, 'points'),
+    legend.key.size = unit(1.3/.pt,'line'),
+    legend.title = element_text(size = 7, color = 'black',face = 'bold'),
+    legend.text=element_text(size=6),
+    plot.margin=grid::unit(c(0,2,0,0), "mm"),
+    strip.text = element_text(size = 7, color = "black",face = 'bold'),
+    legend.margin=margin(0,0,0,0)
+  )
+
+# Create directory for current date and save plots of information coverage of TIL(Basic) over ICU stay
+dir.create(file.path('../plots',Sys.Date()),showWarnings = F,recursive = T)
+ggsave(file.path('../plots',Sys.Date(),'cronbachs_alpha.png'),cronbachs.aplha,units='in',dpi=600,width=3.75,height = 2.05)
